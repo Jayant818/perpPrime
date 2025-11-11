@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{ token_interface::{Mint, TokenAccount, TokenInterface}};
-use crate::{GlobalConfig, error::ErrorCode};
+use crate::{GlobalConfig};
 
 #[derive(Accounts)]
 pub struct Initialize<'info> {
@@ -10,7 +10,7 @@ pub struct Initialize<'info> {
     #[account(
         init,
         seeds = [
-            b"config"
+            b"config",
         ],
         bump,
         payer = payer,
@@ -21,7 +21,7 @@ pub struct Initialize<'info> {
     #[account(
         init,
         seeds = [
-            b"vault"
+            b"vault",
         ],
         bump,
         payer = payer,
@@ -59,9 +59,12 @@ pub fn initialize(ctx: Context<Initialize>,step_size:u8,fee_rate:u8 ) -> Result<
     global_config.admin = ctx.accounts.payer.key();
     global_config.vault = vault.key();
     global_config.vault_mint = vault_mint.key();
-    global_config.fee_rate = fee_rate;
+    global_config.liquidation_fee_rate = fee_rate;
     global_config.step_size = step_size;
     global_config.insurance_fund = insurance_fund.key();
+    global_config.config_bump = ctx.bumps.global_config;
+    global_config.vault_bump = ctx.bumps.vault;
+    global_config.insurance_fund_bump = ctx.bumps.insurance_fund;
 
     Ok(())
 }
