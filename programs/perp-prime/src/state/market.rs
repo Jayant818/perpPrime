@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 
 #[account]
+#[derive(InitSpace)]
 pub struct Market{
     pub bids: Pubkey,
     pub asks:Pubkey,
@@ -17,6 +18,9 @@ pub struct Market{
     pub maintainence_margin: u64,
     pub base_mint: Pubkey,
     pub quote_mint: Pubkey,
+    pub base_lot_size: u64,
+    pub quote_lot_size: u64,
+    pub sequence: u64,
     pub bump : u8,
     pub bids_bump: u8,
     pub asks_bump: u8,

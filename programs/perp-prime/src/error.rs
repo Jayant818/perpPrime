@@ -6,11 +6,17 @@ pub enum ErrorCode {
     CustomError,
 
     #[msg("Incorrect Vault Mint Mismatch")]
-    VaultMismatch,
+    VaultMintMismatch,
 
     #[msg("Addition overflow occurred")]
     AdditionOverflow,
 
     #[msg("Queue is Full")]
-    QueueIsFull
+    QueueIsFull,
+
+    #[msg("Insufficient Margin")]
+    InsufficientMargin,
+
+    #[msg("Incorrect Vault")]
+    IncorrectVault,
 }

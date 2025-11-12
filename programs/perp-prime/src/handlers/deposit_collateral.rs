@@ -2,7 +2,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface, transfer_checked, TransferChecked};
 
-use crate::{GlobalConfig, User, error::ErrorCode};
+use crate::{GlobalConfig, User, UserAccount, error::ErrorCode};
 
 #[derive(Accounts)]
 pub struct DepositCollateral<'info>{
@@ -12,9 +12,14 @@ pub struct DepositCollateral<'info>{
     #[account(
         init_if_needed,
         payer = signer,
-        space = User::INIT_SPACE + User::DISCRIMINATOR.len(),
+        space = UserAccount::INIT_SPACE + UserAccount::DISCRIMINATOR.len(),
+        seeds = [
+            b"user_account",
+            signer.key().as_ref()
+        ],
+        bump,
     )]
-    pub user_account : Account<'info,User>,
+    pub user_account : Account<'info,UserAccount>,
 
     #[account(
         seeds = [
@@ -30,18 +35,18 @@ pub struct DepositCollateral<'info>{
             b"vault"
         ],
         bump = global_config.vault_bump,
-        constraint = program_vault.mint == global_config.vault_mint @ErrorCode::VaultMismatch,
+        constraint = program_vault.mint == global_config.vault_mint @ErrorCode::VaultMintMismatch,
     )]
     pub program_vault : InterfaceAccount<'info,TokenAccount>,
 
     #[account(
-        constraint = token_mint.key() == global_config.vault_mint @ErrorCode::VaultMismatch,
+        constraint = token_mint.key() == global_config.vault_mint @ErrorCode::VaultMintMismatch,
     )]
     pub token_mint : InterfaceAccount<'info,Mint>,
 
     #[account(
         mut,
-        constraint = user_ata.mint == global_config.vault_mint @ErrorCode::VaultMismatch,
+        constraint = user_ata.mint == global_config.vault_mint @ErrorCode::VaultMintMismatch,
     )]
     pub user_ata : InterfaceAccount<'info,TokenAccount>,
 
@@ -75,7 +80,7 @@ pub fn deposit_collateral(ctx:Context<DepositCollateral>,amount:u64,decimals:u8)
     user_account.init_if_needed(user.key());
 
     user_account.owner = user.key();
-    user_account.tokens = user_account.tokens.checked_add(amount).ok_or(ErrorCode::AdditionOverflow)?;
+    user_account.collateral_balance = user_account.collateral_balance.checked_add(amount).ok_or(ErrorCode::AdditionOverflow)?;
 
     Ok(())
 }

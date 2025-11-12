@@ -14,4 +14,5 @@ pub struct GlobalConfig{
     pub insurance_fund_bump:u8,
     pub max_leverage:u8,
     pub pause:bool,
+    pub decimals: u8,
 }

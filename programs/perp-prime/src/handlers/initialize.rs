@@ -1,4 +1,4 @@
-use anchor_lang::prelude::*;
+use anchor_lang::prelude::{borsh::de, *};
 use anchor_spl::{ token_interface::{Mint, TokenAccount, TokenInterface}};
 use crate::{GlobalConfig};
 
@@ -49,7 +49,7 @@ pub struct Initialize<'info> {
     pub system_program : Program<'info, System>,
 }
 
-pub fn initialize(ctx: Context<Initialize>,step_size:u8,fee_rate:u8 ) -> Result<()> {
+pub fn initialize(ctx: Context<Initialize>,step_size:u8,fee_rate:u8,decimals:u8 ) -> Result<()> {
 
     let global_config = &mut ctx.accounts.global_config;
     let vault: &InterfaceAccount<'_, TokenAccount> = &ctx.accounts.vault;
@@ -65,6 +65,7 @@ pub fn initialize(ctx: Context<Initialize>,step_size:u8,fee_rate:u8 ) -> Result<
     global_config.config_bump = ctx.bumps.global_config;
     global_config.vault_bump = ctx.bumps.vault;
     global_config.insurance_fund_bump = ctx.bumps.insurance_fund;
+    global_config.decimals = decimals;
 
     Ok(())
 }

@@ -5,8 +5,8 @@ pub mod queue;
 pub mod request_queue;
 pub mod event_queue;
 pub mod user_position;
-pub mod open_orders;
 pub mod slab_tree;
+pub mod order;
 
 pub use global_config::*;
 pub use user::*;
@@ -15,5 +15,5 @@ pub use queue::*;
 pub use request_queue::*;
 pub use event_queue::*;
 pub use user_position::*;
-pub use open_orders::*;
 pub use slab_tree::*;
+pub use order::*;

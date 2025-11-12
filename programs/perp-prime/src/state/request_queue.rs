@@ -9,11 +9,19 @@ pub enum OrderType{
 }
 
 #[repr(C)]
-#[derive(Clone,Copy,Debug,AnchorDeserialize,AnchorSerialize,Default)]
+#[derive(Clone,Copy,Debug,AnchorDeserialize,AnchorSerialize,Default,InitSpace)]
 pub enum OrderSide{
     #[default]
-    LONG,
-    SHORT
+    BID = 0,
+    ASK = 1
+}
+
+#[repr(C)]
+#[derive(Clone,AnchorDeserialize,AnchorSerialize,InitSpace,Default)]
+pub enum OrderPosition{
+    #[default]
+    SHORT = 0,
+    LONG = 1
 }
 
 #[repr(C)]
@@ -25,13 +33,15 @@ pub enum RequestType{
 }
 
 #[repr(C)]
-#[derive(AnchorDeserialize,AnchorSerialize,Clone,Default)]
+// #[derive(AnchorDeserialize,AnchorSerialize,Clone,Default)]
+#[account]
 pub struct RequestQueue{
     pub request_type:RequestType,
     pub order_type: OrderType,
     pub order_side :OrderSide,
+    pub position: OrderPosition,
     pub quantity: u64,
     pub user: Pubkey,
-    pub order_id: u64,
+    pub order_id: u128,
     // pub entry_price: u64, - Not suitable for Cancel Order, instead we show the order_id
 }

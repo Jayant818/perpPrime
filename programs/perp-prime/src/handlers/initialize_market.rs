@@ -2,14 +2,27 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
 
-use crate::{CircularQueue, EventQueue, GlobalConfig, QueueHeader, RequestQueue, Slab};
+use crate::{CircularQueue, EventQueue, GlobalConfig, Market, QueueHeader, RequestQueue, Slab};
 
 #[derive(Accounts)]
+#[instruction(pair:String)]
 pub struct InitializeMarket<'info>{
     #[account(
         mut,
     )]
     pub signer:Signer<'info>,
+
+    #[account(
+        init,
+        payer = signer,
+        seeds = [
+            b"market",
+            pair.as_bytes(),
+        ],
+        bump,
+        space =  Market::INIT_SPACE + Market::DISCRIMINATOR.len()
+    )]
+    pub market: Account<'info,Market>,
 
     #[account(
         seeds = [
@@ -81,7 +94,7 @@ pub struct InitializeMarket<'info>{
 
 }
 
-pub fn initialize_market(ctx:Context<InitializeMarket>)->Result<()>{
+pub fn initialize_market(ctx:Context<InitializeMarket>,pair:String)->Result<()>{
 
     let mut event_queue = ctx.accounts.event_queue.try_borrow_mut_data()?;
     let mut request_queue = ctx.accounts.request_queue.try_borrow_mut_data()?;
@@ -96,6 +109,10 @@ pub fn initialize_market(ctx:Context<InitializeMarket>)->Result<()>{
 
     Slab::initialize(&mut bids_slab)?;
     Slab::initialize(&mut asks_slab)?;
+
+    let market = &mut ctx.accounts.market;
+
+    market.sequence = 0;
 
 
     Ok(())
