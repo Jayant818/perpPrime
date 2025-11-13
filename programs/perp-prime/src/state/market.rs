@@ -7,6 +7,8 @@ pub struct Market{
     pub asks:Pubkey,
     pub request_queue: Pubkey,
     pub event_queue: Pubkey,
+    #[max_len(15)]
+    pub pair: String,
     pub oracle_price_feed: Pubkey,
     pub funding_rate : i64, // currrent funding rate - scaled by 1e6
     pub funding_clamp:i64, // scaled 1e6
@@ -21,7 +23,7 @@ pub struct Market{
     pub base_lot_size: u64,
     pub quote_lot_size: u64,
     pub sequence: u64,
-    pub bump : u8,
+    pub market_bump : u8,
     pub bids_bump: u8,
     pub asks_bump: u8,
     pub event_queue_bump: u8,

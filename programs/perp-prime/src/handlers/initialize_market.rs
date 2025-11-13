@@ -94,7 +94,19 @@ pub struct InitializeMarket<'info>{
 
 }
 
-pub fn initialize_market(ctx:Context<InitializeMarket>,pair:String)->Result<()>{
+pub fn initialize_market(
+    ctx:Context<InitializeMarket>,
+    pair:String,
+    oracle_price_feed:Pubkey,
+    funding_rate:i64,
+    funding_clamp:i64,
+    initial_margin_rate:u64,
+    maintainence_margin:u64,
+    base_mint:Pubkey,
+    quote_mint:Pubkey,
+    base_lot_size:u64,
+    quote_lot_size:u64,
+)->Result<()>{
 
     let mut event_queue = ctx.accounts.event_queue.try_borrow_mut_data()?;
     let mut request_queue = ctx.accounts.request_queue.try_borrow_mut_data()?;
@@ -113,7 +125,27 @@ pub fn initialize_market(ctx:Context<InitializeMarket>,pair:String)->Result<()>{
     let market = &mut ctx.accounts.market;
 
     market.sequence = 0;
-
+    market.asks = ctx.accounts.asks.key();
+    market.bids = ctx.accounts.bids.key();
+    market.asks_bump = ctx.bumps.asks;
+    market.bids_bump = ctx.bumps.bids;
+    market.request_queue = ctx.accounts.request_queue.key();
+    market.event_queue = ctx.accounts.request_queue.key();
+    market.oracle_price_feed = oracle_price_feed;
+    market.pair = pair;
+    market.funding_rate = funding_rate;
+    market.funding_clamp = funding_clamp;
+    market.last_funding_time = 0;
+    market.cummulative_funding_rate = 0;
+    market.base_mint = base_mint;
+    market.quote_lot_size = quote_lot_size;
+    market.base_lot_size = base_lot_size;
+    market.quote_mint = quote_mint;
+    market.maintainence_margin = maintainence_margin;
+    market.initial_margin_rate = initial_margin_rate;
+    market.event_queue_bump = ctx.bumps.event_queue;
+    market.request_queue_bump = ctx.bumps.request_queue;
+    market.market_bump = ctx.bumps.market;
 
     Ok(())
 }
