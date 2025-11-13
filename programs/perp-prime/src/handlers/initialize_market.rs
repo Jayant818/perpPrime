@@ -2,7 +2,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
 
-use crate::{CircularQueue, EventQueue, GlobalConfig, Market, QueueHeader, RequestQueue, Slab};
+use crate::{CircularQueue, EventQueue, GlobalConfig, Market, QueueHeader, RequestItem, Slab};
 
 #[derive(Accounts)]
 #[instruction(pair:String)]
@@ -103,7 +103,7 @@ pub fn initialize_market(ctx:Context<InitializeMarket>,pair:String)->Result<()>{
     let mut asks_slab = ctx.accounts.asks.try_borrow_mut_data()?;
     
 
-    CircularQueue::<RequestQueue>::intialize(&mut request_queue, 128)?;
+    CircularQueue::<RequestItem>::intialize(&mut request_queue, 128)?;
 
     CircularQueue::<EventQueue>::intialize(&mut event_queue, 256)?;
 

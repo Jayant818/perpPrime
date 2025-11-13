@@ -33,9 +33,9 @@ pub enum RequestType{
 }
 
 #[repr(C)]
-// #[derive(AnchorDeserialize,AnchorSerialize,Clone,Default)]
+#[derive(Default)]
 #[account]
-pub struct RequestQueue{
+pub struct RequestItem{
     pub request_type:RequestType,
     pub order_type: OrderType,
     pub order_side :OrderSide,
