@@ -5,7 +5,7 @@ use anchor_spl::token_interface::{TokenAccount, TokenInterface, TransferChecked,
 use crate::{CircularQueue, GlobalConfig, Market, Order, OrderPosition, OrderSide, OrderType, RequestItem, RequestType, UserAccount, UserPosition, error::ErrorCode, request_item, user_position};
 
 #[derive(Accounts)]
-#[instruction(pair:String)]
+#[instruction(_pair:String)]
 pub struct PlacePerpOrder<'info>{
 
     #[account(mut)]
@@ -41,7 +41,7 @@ pub struct PlacePerpOrder<'info>{
         mut,
         seeds = [
             b"market",
-            pair.as_bytes(),
+            _pair.as_bytes(),
         ],
         bump,
     )]
@@ -110,11 +110,11 @@ pub fn place_perp_order(
     amount_in_ui:u64, 
     side:OrderSide,
     qty_in_ui:u64,
-    pair:String,
+    _pair:String,
     position:OrderPosition, 
     margin:u64,
     order_type:OrderType,
-    request_type:RequestTypeq
+    request_type:RequestType
 )->Result<()>{
 
     let user_account = &mut ctx.accounts.user_account;

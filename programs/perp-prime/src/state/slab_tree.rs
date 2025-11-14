@@ -68,14 +68,14 @@ impl Slab{
         std::mem::size_of::<SlabNode>()
     }
 
-    fn read_header(account_data:&[u8])->Result<SlabHeader>{
+    pub fn read_header(account_data:&[u8])->Result<SlabHeader>{
         let header_size = Self::header_size();
         Ok(
             SlabHeader::try_from_slice(&account_data[..header_size])?
         )
     }
 
-    fn write_header(account_data:&mut [u8],header:&SlabHeader)->Result<()>{
+    pub fn write_header(account_data:&mut [u8],header:&SlabHeader)->Result<()>{
         let header_size = Self::header_size();
 
         header.serialize(&mut &mut account_data[..header_size])?;
@@ -84,7 +84,7 @@ impl Slab{
     }
 
     // Read Node at a index (index must be >= 1)
-    fn read_node(account_data:&[u8],index:u64)->Result<SlabNode>{
+    pub fn read_node(account_data:&[u8],index:u64)->Result<SlabNode>{
         if index == 0 {
         return Err(ErrorCode::IndexOutOfBound.into())
         }
@@ -104,7 +104,7 @@ impl Slab{
     }
 
     // Write node to a index
-    fn write_node(account_data:&mut[u8],index:u64,node:&SlabNode)->Result<()>{
+    pub fn write_node(account_data:&mut[u8],index:u64,node:&SlabNode)->Result<()>{
 
         if index == 0 {
             return Err(ErrorCode::IndexOutOfBound.into())
@@ -574,7 +574,7 @@ impl Slab{
 
     }
 
-    fn remove_by_index(account_data:&mut [u8],leaf_idx:u64)->Result<SlabNode>{
+    pub fn remove_by_index(account_data:&mut [u8],leaf_idx:u64)->Result<SlabNode>{
         let node = Self::read_node(account_data, leaf_idx)?;
 
         if node.tag != NodeType::LEAF {
@@ -588,6 +588,10 @@ impl Slab{
     pub fn pop_min(account_data:&mut [u8])->Result<SlabNode>{
         let (idx,_) = Self::find_min(account_data)?;
         Self::remove_by_index(account_data, idx)
+    }
+
+    pub fn get_price_from_key(key:u128)->u64{
+        (key>>64) as u64
     }
 
     pub fn pop_max(account_data:&mut [u8])->Result<SlabNode>{

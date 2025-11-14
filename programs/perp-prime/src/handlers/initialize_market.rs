@@ -5,7 +5,6 @@ use anchor_spl::token::Mint;
 use crate::{CircularQueue, EventQueue, GlobalConfig, Market, QueueHeader, RequestItem, Slab};
 
 #[derive(Accounts)]
-#[instruction(pair:String)]
 pub struct InitializeMarket<'info>{
     #[account(
         mut,
@@ -17,7 +16,8 @@ pub struct InitializeMarket<'info>{
         payer = signer,
         seeds = [
             b"market",
-            pair.as_bytes(),
+            base_mint.key().as_ref(),
+            quote_mint.key().as_ref(),
         ],
         bump,
         space =  Market::INIT_SPACE + Market::DISCRIMINATOR.len()

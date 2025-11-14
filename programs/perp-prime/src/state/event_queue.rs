@@ -28,7 +28,7 @@ impl Default for EventType{
 pub struct FillEvent{
     pub taker:Pubkey,
     pub maker:Pubkey,
-    pub order_id:u64,
+    pub order_id:u128,
     pub price : u64,
     pub quantity: u64,
     pub taker_side: OrderSide,

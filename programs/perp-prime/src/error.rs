@@ -8,6 +8,9 @@ pub enum ErrorCode {
     #[msg("Incorrect Vault Mint Mismatch")]
     VaultMintMismatch,
 
+    #[msg("Incorrect Mint Mismatch")]
+    MintMismatch,
+
     #[msg("Addition overflow occurred")]
     AdditionOverflow,
 
@@ -40,5 +43,14 @@ pub enum ErrorCode {
 
     #[msg("Key didn't match, Index Out of Bound")]
     KeyMisMatch,
+
+    #[msg("Request queue is Empty")]
+    RequestQueueEmpty,
+
+    #[msg("Invalid Order Quantity")]
+    InvalidOrderQuantity,
+
+    #[msg("Subtraction Underflow")]
+    SubtractionUnderFlow,
 }   
 
