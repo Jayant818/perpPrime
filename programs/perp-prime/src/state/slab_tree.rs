@@ -323,7 +323,7 @@ impl Slab{
                     if current == 0 { return Err(error!(ErrorCode::IndexOutOfBound)); }
                 }
                 x if x == node_tag::LEAF => break,
-                _ => return Err(error!(ErrorCode::UnexpectedNodeTag)),
+                _ => return Err(error!(ErrorCode::UnexpectedNodeTag)),user
             }
         }
 

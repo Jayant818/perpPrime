@@ -53,14 +53,13 @@ pub mod perp_prime {
         amount_in_ui:u64, 
         side:OrderSide,
         qty_in_ui:u64,
-        _pair:String,
         position:OrderPosition, 
         margin:u64,
         order_type:OrderType,
         request_type:RequestType
     )->Result<()>{
         
-        handlers::place_perp_order(ctx, amount_in_ui, side, qty_in_ui, _pair, position, margin, order_type, request_type)?;
+        handlers::place_perp_order(ctx, amount_in_ui, side, qty_in_ui, position, margin, order_type, request_type)?;
         
         Ok(())
     }

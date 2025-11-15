@@ -130,7 +130,7 @@ pub fn initialize_market(
     market.asks_bump = ctx.bumps.asks;
     market.bids_bump = ctx.bumps.bids;
     market.request_queue = ctx.accounts.request_queue.key();
-    market.event_queue = ctx.accounts.request_queue.key();
+    market.event_queue = ctx.accounts.event_queue.key();
     market.oracle_price_feed = oracle_price_feed;
     market.pair = pair;
     market.funding_rate = funding_rate;

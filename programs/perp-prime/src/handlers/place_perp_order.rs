@@ -2,10 +2,9 @@
 use anchor_lang::{ prelude::*};
 use anchor_spl::token_interface::{TokenAccount, TokenInterface, TransferChecked, transfer_checked};
 
-use crate::{CircularQueue, GlobalConfig, Market, Order, OrderPosition, OrderSide, OrderType, RequestItem, RequestType, UserAccount, UserPosition, error::ErrorCode, request_item, user_position};
+use crate::{CircularQueue, GlobalConfig, Market, Order, OrderPosition, OrderSide, OrderType, RequestItem, RequestType, UserAccount, UserPosition, error::ErrorCode};
 
 #[derive(Accounts)]
-#[instruction(_pair:String)]
 pub struct PlacePerpOrder<'info>{
 
     #[account(mut)]
@@ -41,7 +40,8 @@ pub struct PlacePerpOrder<'info>{
         mut,
         seeds = [
             b"market",
-            _pair.as_bytes(),
+            market.base_mint.as_ref(),
+            market.quote_mint.as_ref(),
         ],
         bump,
     )]
@@ -85,6 +85,9 @@ pub struct PlacePerpOrder<'info>{
     )]
     pub vault: InterfaceAccount<'info,TokenAccount>,
 
+    /// CHECK: 
+    pub oracle_price_feed : UncheckedAccount<'info>,
+
     #[account(
         mut,
         seeds = [
@@ -110,11 +113,11 @@ pub fn place_perp_order(
     amount_in_ui:u64, 
     side:OrderSide,
     qty_in_ui:u64,
-    _pair:String,
     position:OrderPosition, 
     margin:u64,
     order_type:OrderType,
-    request_type:RequestType
+    request_type:RequestType,
+    limit_price: u64,
 )->Result<()>{
 
     let user_account = &mut ctx.accounts.user_account;
@@ -132,21 +135,27 @@ pub fn place_perp_order(
     let quote_lot_size = market.quote_lot_size;
     let base_lot_size = market.base_lot_size;
 
-    let amount_in_lots:u64 = amount_in_ui.checked_div(quote_lot_size).ok_or(ErrorCode::MathError)?;
+    let _amount_in_lots:u64 = amount_in_ui.checked_div(quote_lot_size).ok_or(ErrorCode::MathError)?;
     let size_in_lots:u64 = qty_in_ui.checked_div(base_lot_size).ok_or(ErrorCode::MathError)?;
     
     // suppose user is placing order in btc - usdc , either the user is providing the amount_in_ui in BTC , then we should get the current price of the BTC from oracle or perp price , then we get the amount of the USD, then we calculate the IMR for that market and check if user has passed that much amount of margin or not, we also check how much leverage user can get , I think it is 1/IMR
     
     // TODO: FETCH LATEST PRICE FROM THE ORACLE OR FETCH THE PERP PRICE.
+    let latest_price = ctx.accounts.oracle_price_feed;
     let latest_price:u64 = 10;
 
-    let notional = latest_price.checked_mul(size_in_lots).ok_or(ErrorCode::MathError)?;
+    let price = match order_type {
+        OrderType::MarketOrder => latest_price,
+        OrderType::LimitOrder => limit_price,
+    };
+
+    let notional = price.checked_mul(size_in_lots).ok_or(ErrorCode::MathError)?;
     let imr_for_this_market = market.initial_margin_rate;
 
     require!(margin >= notional.checked_mul(imr_for_this_market).ok_or(ErrorCode::MathError)?,ErrorCode::InsufficientMargin);
 
     // Check user has sufficient balance or not
-    if user_account.collateral_balance < 0 {
+    if user_account.collateral_balance <= 0 {
         // fund the user account transfer the money.
         let amount_to_be_transferred = margin.checked_sub(user_account.collateral_balance).ok_or(ErrorCode::MathError)?;
 
@@ -166,18 +175,21 @@ pub fn place_perp_order(
 
     market.sequence = market.sequence.checked_add(1).ok_or(ErrorCode::AdditionOverflow)?;
 
+    // Store position as u8 for later use
+    let position_u8 = position as u8;
+    
     // Fill the order PDA 
     order.side = side;
     order.bump = ctx.bumps.order_pda;
     order.position = position;
     order.quantity = qty_in_ui;
-    order.entry_price = latest_price; // have to look at this also
+    order.entry_price = price; // have to look at this also
     order.user = user.key();
 
 
     // Fill the User Position 
     user_position.market = market.key();
-    user_position.bump = ctx.bumps.user_account;
+    user_position.bump = ctx.bumps.user_position;
     user_position.quantity = qty_in_ui;  // maybe we have to store the lot size here ?
     user_position.user_account = user_account.key();
     user_position.collateral = margin;
@@ -194,16 +206,19 @@ pub fn place_perp_order(
     user_account.positions.append(pos_vec);
 
 
-    // TODO: now we have to push the position into the Request Queue and emit the evenr
-    let order_id:u128 = ((latest_price as u128 ) << 64 ) | (market.sequence as u128);
+    // For limit order use provided price and for market order use oracle Price
+
+    let order_id:u128 = ((price as u128 ) << 64 ) | (market.sequence as u128);
     let item = RequestItem {
         user: user.key(),
         order_id:order_id,
-        order_side:side,
-        order_type,
-        position,
+        order_side: side as u8,
+        order_type: order_type as u8,
+        position: position_u8,
+        padding0:[0;4],
         quantity:qty_in_ui,
-        request_type,
+        request_type: request_type as u8,
+        
     };
 
     CircularQueue::<RequestItem>::push(&mut request_queue, &item)?;

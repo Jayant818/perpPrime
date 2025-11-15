@@ -18,7 +18,7 @@ pub enum OrderSide{
 }
 
 #[repr(C)]
-#[derive(Clone,AnchorDeserialize,AnchorSerialize,InitSpace,Default)]
+#[derive(Clone,Copy,AnchorDeserialize,AnchorSerialize,InitSpace,Default)]
 pub enum OrderPosition{
     #[default]
     SHORT = 0,
@@ -44,6 +44,6 @@ pub struct RequestItem{
     pub quantity: u64,
     pub user: Pubkey,
     pub order_id: u128,
-    pub padding1: [u8; 0],
+    // pub padding1: [u8; 0],
     // pub entry_price: u64, - Not suitable for Cancel Order, instead we show the order_id
 }
