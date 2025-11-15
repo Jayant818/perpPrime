@@ -2,7 +2,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
 
-use crate::{CircularQueue, EventQueue, GlobalConfig, Market, QueueHeader, RequestItem, Slab};
+use crate::{CircularQueue, EventQueue, EventQueueEntry, GlobalConfig, Market, QueueHeader, RequestItem, Slab};
 
 #[derive(Accounts)]
 pub struct InitializeMarket<'info>{
@@ -117,7 +117,7 @@ pub fn initialize_market(
 
     CircularQueue::<RequestItem>::intialize(&mut request_queue, 128)?;
 
-    CircularQueue::<EventQueue>::intialize(&mut event_queue, 256)?;
+    CircularQueue::<EventQueueEntry>::intialize(&mut event_queue, 256)?;
 
     Slab::initialize(&mut bids_slab)?;
     Slab::initialize(&mut asks_slab)?;

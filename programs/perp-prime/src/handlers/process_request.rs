@@ -1,8 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::TokenAccount;
-use bytemuck::bytes_of;
+use bytemuck::{bytes_of, checked::cast};
 
-use crate::{CircularQueue, pubkey_to_array, array_to_pubkey, EventQueueEntry, FillEventPod, GlobalConfig, Market, OrderSide, RequestItem, Slab, SlabNode, error::ErrorCode};
+use crate::{AnyEvent, CircularQueue, EventQueueEntry, FillEventPod, GlobalConfig, Market, OrderSide, RequestItem, Slab, SlabNode, array_to_pubkey, error::ErrorCode, pubkey_to_array};
 
 
 
@@ -29,12 +29,14 @@ fn emit_fill_event(
     };
 
 
-    let fill_bytes = bytes_of(&fill);
-    let mut raw = [0u8;112];
-    raw[..fill_bytes.len()].copy_from_slice(fill_bytes);
+    // let fill_bytes = bytes_of(&fill);
+    // let mut raw = [0u8;112];
+    // raw[..fill_bytes.len()].copy_from_slice(fill_bytes);
+
+    let raw_event:AnyEvent = cast(fill);
 
     let item = EventQueueEntry {
-        raw,
+        raw:raw_event,
         timestamp: Clock::get()?.unix_timestamp,
     };
 

@@ -54,23 +54,20 @@ pub struct LiquidatePod {
 }
 const _: () = assert!(std::mem::size_of::<LiquidatePod>() == EVENT_SIZE);
 
-/// High-level queue entry combining timestamp and payload tag+slot.
-/// We keep timestamp separate from the POD slot so the slot remains uniform.
-/// Note: this struct is NOT Pod because of the enum; keep it for higher-level logic only.
 #[repr(C)]
-#[derive(AnchorSerialize, AnchorDeserialize, Clone, Debug)]
+#[derive(Pod,Zeroable, Clone,Copy, Debug)]
 pub struct EventQueueEntry {
     /// Unix timestamp (i64)
     pub timestamp: i64,
     /// The raw event slot bytes (length EVENT_SIZE). Use AnyEvent/FillEventPod/etc. to interpret.
-    pub raw: [u8; EVENT_SIZE],
+    pub raw: AnyEvent,
 }
 
 impl Default for EventQueueEntry {
     fn default() -> Self {
         Self {
             timestamp: 0,
-            raw: [0u8; EVENT_SIZE],
+            raw: AnyEvent::zeroed(),
         }
     }
 }
