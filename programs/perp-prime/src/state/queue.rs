@@ -1,14 +1,28 @@
 use anchor_lang::prelude::*;
-use crate::error::ErrorCode;
+use anchor_spl::{associated_token::spl_associated_token_account::solana_program::nonce::state::Data, token_2022::spl_token_2022::solana_zk_sdk::encryption::pedersen::H};
+use crate::{error::ErrorCode, request_item};
+use bytemuck::{
+    Pod,
+    Zeroable,
+    bytes_of,
+    bytes_of_mut,
+    from_bytes,
+    from_bytes_mut,
+};
+
+const DATA_OFFSET:usize = 0;
 // Meta Data stored at the start of each queue account
 #[repr(C)] 
-#[derive(AnchorDeserialize,AnchorSerialize,Debug,Clone,Default)]
+#[derive(Copy,Clone,Debug,Pod,Zeroable)]
 pub struct QueueHeader{
     pub head: u64,
     pub tail: u64,
     pub capacity: u64,
     pub count: u64,
 }
+
+// compile time check
+const _:() = assert!(std::mem::size_of::<QueueHeader>()==32);
 
 impl QueueHeader{
     pub fn initialize(&mut self,capacity:u64){
@@ -24,33 +38,57 @@ pub struct CircularQueue<T>{
 }
 
 impl<T> CircularQueue<T> 
-where  T : AnchorDeserialize + AnchorSerialize + Clone + Default,
+where  T : Pod+Zeroable+Copy,
 {
     pub fn intialize(account_data:&mut[u8],capacity:usize)->Result<()>{
-        let mut header = QueueHeader::default();
+        let header_size = std::mem::size_of::<QueueHeader>();
+
+        if account_data.len() < DATA_OFFSET + header_size {
+            return Err(error!(ErrorCode::AccountDataTooSmall))
+        }
+
+        // This creates a instance where each byte is zero
+        let mut header = QueueHeader::zeroed();
         header.initialize(capacity as u64);
 
-        // write header at the start - Serialize header into the first N bytes of account_data  - first 32 bytes are changed
-        header.serialize(&mut &mut account_data[..std::mem::size_of::<QueueHeader>()])?;
-
+        let header_bytes = bytes_of(&header);
+        // it copies header_bytes into the account buffer
+        account_data[DATA_OFFSET..DATA_OFFSET+header_size].copy_from_slice(header_bytes);
+ 
         Ok(())
     }
 
     pub fn push(account_data:&mut[u8],item:&T)->Result<()>{
 
-        let header_size = std::mem::size_of::<QueueHeader>();
-        let mut header:QueueHeader = QueueHeader::try_from_slice(&account_data[..header_size])?;
+       let header_size = std::mem::size_of::<QueueHeader>();
+       let node_size = std::mem::size_of::<T>();
 
-        require!(header.count<header.capacity, ErrorCode::QueueIsFull);
+       if account_data.len() < DATA_OFFSET + header_size {
+         return Err(error!(ErrorCode::AccountDataTooSmall))
+       }
 
-        let item_size = std::mem::size_of::<T>();
-        let offset = header_size + (header.tail as usize + item_size);
-        item.serialize(&mut &mut account_data[offset..offset+item_size])?;
+       // load header
+       let header_slice = &mut account_data[DATA_OFFSET..DATA_OFFSET+header_size];
+       let header_ref : &mut QueueHeader = from_bytes_mut(header_slice);
 
-        // updating header
-        header.tail = (header.tail+1)%header.capacity;
-        header.count +=1;
-        header.serialize(&mut &mut account_data[..header_size])?;
+       require!(header_ref.count < header_ref.capacity, ErrorCode::QueueIsFull);
+
+       // computing offset for item slot 
+        let slot_index = header_ref.tail as usize;
+        let offset = DATA_OFFSET + header_size + slot_index * node_size;
+        let end = offset + node_size;
+
+        if end > account_data.len() {
+            return Err(error!(ErrorCode::AccountDataTooSmall))
+        }
+
+        // copy item directly into the account buffer 
+        let item_bytes = bytes_of(item);
+        account_data[offset..end].copy_from_slice(item_bytes);
+
+        // update header fields
+        header_ref.tail = (header_ref.tail + 1)% header_ref.capacity;
+        header_ref.count +=1;
 
         Ok(())
     }
@@ -59,42 +97,55 @@ where  T : AnchorDeserialize + AnchorSerialize + Clone + Default,
     pub fn pop(account_data:&mut[u8])->Result<Option<T>>{
 
         let header_size = std::mem::size_of::<QueueHeader>();
-        let mut header:QueueHeader = QueueHeader::try_from_slice(&account_data[..header_size])?;
+        let node_size = std::mem::size_of::<T>();
 
-        if header.count == 0 {
-            return Ok(None)
+        let header_slice = &mut account_data[DATA_OFFSET..DATA_OFFSET+header_size];
+        let header_ref: &mut QueueHeader = from_bytes_mut(header_slice);
+
+        if header_ref.count == 0 {
+            return Ok(None);
         }
 
-        let item_size = std::mem::size_of::<T>();
-        //  suppose header is a 4th index then doing, so finding the header.
-        let offset = header_size + (header.head as usize * item_size);
+        let slot_index = header_ref.head as usize;
+        let offset = DATA_OFFSET + header_size + slot_index*node_size;
+        let end = offset + node_size;
 
-        let item = T::try_from_slice(&account_data[offset..offset+item_size])?;
+        if end > account_data.len() {
+            return Err(error!(ErrorCode::AccountDataTooSmall))
+        }
 
-        // update header 
-        header.head = (header.head+1)%header.capacity;
-        header.count-=1;
+        let item_ref = from_bytes(&account_data[offset..end]);
+        let item_copy : T = *item_ref;
 
-        header.serialize(&mut &mut account_data[..header_size])?;
+        header_ref.count -=1;
+        header_ref.head = (header_ref.head + 1) % header_ref.capacity;
 
-        Ok(Some(item))
+        Ok(Some(item_copy))
+        
     }
 
 
     pub fn peek(account_data:&mut[u8])->Result<Option<T>>{
         let header_size = std::mem::size_of::<QueueHeader>();
-        let header = QueueHeader::try_from_slice(&account_data[..header_size])?;
+        let node_size = std::mem::size_of::<T>();
 
-        if header.count == 0{
+        let header_bytes = &mut account_data[DATA_OFFSET..DATA_OFFSET+header_size];
+        let header_ref : &QueueHeader = from_bytes_mut(header_bytes);
+
+        if header_ref.count == 0 {
             return Ok(None)
         }
 
-        let item_size = std::mem::size_of::<T>();
+        let slot_index = header_ref.head as usize;
+        let offset = DATA_OFFSET + header_size + slot_index * node_size;
+        let end = offset + node_size;
 
-        let offset = header_size + (header.head as usize * item_size);
+        if end > account_data.len() {
+            return Err(error!(ErrorCode::AccountDataTooSmall));
+        }
 
-        let item = T::try_from_slice(&account_data[offset..offset+item_size])?;
 
-        Ok(Some(item))
+        let item_ref:&T = from_bytes(&account_data[offset..end]);
+        Ok(Some(*item_ref))
     }
 }

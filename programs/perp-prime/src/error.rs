@@ -52,5 +52,8 @@ pub enum ErrorCode {
 
     #[msg("Subtraction Underflow")]
     SubtractionUnderFlow,
+
+    #[msg("Account Data too small")]
+    AccountDataTooSmall,
 }   
 

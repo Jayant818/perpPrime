@@ -1,4 +1,5 @@
-use anchor_lang::prelude::{borsh::de, *};
+use anchor_lang::prelude::*;
+use bytemuck::{Zeroable,Pod};
 
 #[derive(Clone,Copy,AnchorDeserialize,AnchorSerialize,Default)]
 #[repr(C)]
@@ -33,15 +34,16 @@ pub enum RequestType{
 }
 
 #[repr(C)]
-#[derive(Default)]
-#[account]
+#[derive(Clone, Copy, Debug,Pod, Zeroable)]
 pub struct RequestItem{
-    pub request_type:RequestType,
-    pub order_type: OrderType,
-    pub order_side :OrderSide,
-    pub position: OrderPosition,
+    pub request_type:u8, // 0 = OPEN , 1 = CANCEL
+    pub order_type: u8,  // 0 = Market Order, 1 = limit Order
+    pub order_side :u8, // 0 = Bid, 1 = Ask
+    pub position: u8,   // 0 = SHORT , 1 = LONG
+    pub padding0:[u8;4],
     pub quantity: u64,
     pub user: Pubkey,
     pub order_id: u128,
+    pub padding1: [u8; 0],
     // pub entry_price: u64, - Not suitable for Cancel Order, instead we show the order_id
 }
