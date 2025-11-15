@@ -1,7 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::TokenAccount;
+use bytemuck::bytes_of;
 
-use crate::{CircularQueue, EventQueue, EventType, FillEvent, GlobalConfig, Market, OrderSide, OrderType, RequestItem, Slab, SlabNode, error::ErrorCode};
+use crate::{CircularQueue, pubkey_to_array, array_to_pubkey, EventQueueEntry, FillEventPod, GlobalConfig, Market, OrderSide, RequestItem, Slab, SlabNode, error::ErrorCode};
+
 
 
 fn emit_fill_event(
@@ -11,23 +13,32 @@ fn emit_fill_event(
     price: u64,
     quantity: u64,
     taker: Pubkey,
-    taker_side: OrderSide,
+    taker_side: u8,
 ) -> Result<()> {
-    let fill = FillEvent {
-        maker,
+    let maker_bytes = pubkey_to_array(maker);
+    let taker_bytes = pubkey_to_array(taker);
+
+    let fill = FillEventPod {
+        maker:maker_bytes,
         order_id: maker_order_id,
         price,
         quantity,
-        taker,
-        taker_side,
+        taker:taker_bytes,
+        taker_side: taker_side as u8,
+        padding:[0;15],
     };
 
-    let item = EventQueue {
-        event_type: EventType::Fill(fill),
+
+    let fill_bytes = bytes_of(&fill);
+    let mut raw = [0u8;112];
+    raw[..fill_bytes.len()].copy_from_slice(fill_bytes);
+
+    let item = EventQueueEntry {
+        raw,
         timestamp: Clock::get()?.unix_timestamp,
     };
 
-    CircularQueue::<EventQueue>::push(event_queue, &item)?;
+    CircularQueue::<EventQueueEntry>::push(event_queue, &item)?;
     Ok(())
 }
 
@@ -55,7 +66,7 @@ fn process_fill(
 
     emit_fill_event(
         event_queue,
-        max_bid.owner,           
+        array_to_pubkey(max_bid.owner),           
         max_bid.order_id,        
         Slab::get_price_from_key(max_bid.key),
         filled_qty,
@@ -141,9 +152,12 @@ pub struct ProcessRequest<'info>{
         bump = market.asks_bump
     )]
     pub asks: UncheckedAccount<'info>,
-
-
 }
+
+const BID: u8 = 0;
+const ASK: u8 = 1;
+const MARKET_ORDER:u8 = 0;
+const LIMIT_ORDER:u8 = 1;
 
 pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
@@ -167,10 +181,9 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
     // we also need to find the price of the order that we poped from the request_queue, we have to order id , so we need to specify the order PDA
 
     match taker_order.order_side{
-        OrderSide::ASK =>{
-
+        ASK =>{
                 match taker_order.order_type {
-                    OrderType::MarketOrder =>{
+                    MARKET_ORDER =>{
                         // Need to execute Immediately
 
                         if taker_order.quantity == 0 {
@@ -209,7 +222,7 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
                             Slab::insert(&mut asks, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
                         }
                     },
-                    OrderType::LimitOrder =>{
+                    LIMIT_ORDER =>{
                         // If It is limit order then we have to check if the price match or not , if the price doesn't match or some quantity is left then push the order in the Ask slab tree
                         let taker_order_price = get_price_from_order_id(taker_order.order_id);
 
@@ -246,12 +259,15 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
                                 // else continue (will match against next best bid)
                             }
                         }
+                    },
+                    _ => {
+                        return Err(error!(ErrorCode::InvalidOrderType));
                     }
                 }
         }
-        OrderSide::BID =>{
+        BID =>{
             match taker_order.order_type{
-                OrderType::MarketOrder=>{
+                MARKET_ORDER=>{
                     // We are on the Buy side: match against asks (best ask = find_min)
                     if taker_order.quantity == 0 {
                         return Err(error!(ErrorCode::InvalidOrderQuantity))
@@ -276,7 +292,7 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
                         Slab::insert(&mut bids, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
                     }
                 },
-                OrderType::LimitOrder=>{
+                LIMIT_ORDER=>{
                     // Limit buy: only match if taker_price >= best ask price
                     let taker_order_price = get_price_from_order_id(taker_order.order_id);
 
@@ -302,8 +318,14 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
                             if taker_order.quantity == 0 { break; }
                         }
                     }
+                },
+                _ => {
+                    return Err(error!(ErrorCode::InvalidOrderType));
                 }
             }
+        },
+        _ => {
+            return Err(error!(ErrorCode::InvalidOrderSide));
         }
     }
 

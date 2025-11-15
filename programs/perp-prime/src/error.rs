@@ -55,5 +55,12 @@ pub enum ErrorCode {
 
     #[msg("Account Data too small")]
     AccountDataTooSmall,
+
+    #[msg("Invalid Order Type")]
+    InvalidOrderType,
+
+    #[msg("Invalid Order Side")]
+    InvalidOrderSide,
 }   
+
 

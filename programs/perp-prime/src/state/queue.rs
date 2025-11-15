@@ -1,11 +1,9 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{associated_token::spl_associated_token_account::solana_program::nonce::state::Data, token_2022::spl_token_2022::solana_zk_sdk::encryption::pedersen::H};
-use crate::{error::ErrorCode, request_item};
+use crate::error::ErrorCode;
 use bytemuck::{
     Pod,
     Zeroable,
     bytes_of,
-    bytes_of_mut,
     from_bytes,
     from_bytes_mut,
 };
@@ -67,9 +65,9 @@ where  T : Pod+Zeroable+Copy,
          return Err(error!(ErrorCode::AccountDataTooSmall))
        }
 
-       // load header
-       let header_slice = &mut account_data[DATA_OFFSET..DATA_OFFSET+header_size];
-       let header_ref : &mut QueueHeader = from_bytes_mut(header_slice);
+       // First, read header to get the tail position
+       let header_slice = &account_data[DATA_OFFSET..DATA_OFFSET+header_size];
+       let header_ref : &QueueHeader = from_bytes(header_slice);
 
        require!(header_ref.count < header_ref.capacity, ErrorCode::QueueIsFull);
 
@@ -86,7 +84,9 @@ where  T : Pod+Zeroable+Copy,
         let item_bytes = bytes_of(item);
         account_data[offset..end].copy_from_slice(item_bytes);
 
-        // update header fields
+        // Now update header fields
+        let header_slice = &mut account_data[DATA_OFFSET..DATA_OFFSET+header_size];
+        let header_ref : &mut QueueHeader = from_bytes_mut(header_slice);
         header_ref.tail = (header_ref.tail + 1)% header_ref.capacity;
         header_ref.count +=1;
 
@@ -99,8 +99,9 @@ where  T : Pod+Zeroable+Copy,
         let header_size = std::mem::size_of::<QueueHeader>();
         let node_size = std::mem::size_of::<T>();
 
-        let header_slice = &mut account_data[DATA_OFFSET..DATA_OFFSET+header_size];
-        let header_ref: &mut QueueHeader = from_bytes_mut(header_slice);
+        // First read header to check if queue is empty
+        let header_slice = &account_data[DATA_OFFSET..DATA_OFFSET+header_size];
+        let header_ref: &QueueHeader = from_bytes(header_slice);
 
         if header_ref.count == 0 {
             return Ok(None);
@@ -114,9 +115,13 @@ where  T : Pod+Zeroable+Copy,
             return Err(error!(ErrorCode::AccountDataTooSmall))
         }
 
+        // Read the item before updating header
         let item_ref = from_bytes(&account_data[offset..end]);
         let item_copy : T = *item_ref;
 
+        // Now update header
+        let header_slice = &mut account_data[DATA_OFFSET..DATA_OFFSET+header_size];
+        let header_ref: &mut QueueHeader = from_bytes_mut(header_slice);
         header_ref.count -=1;
         header_ref.head = (header_ref.head + 1) % header_ref.capacity;
 

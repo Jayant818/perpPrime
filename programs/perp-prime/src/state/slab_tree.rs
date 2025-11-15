@@ -109,16 +109,14 @@ impl Slab{
     }
 
     // Write node to a index
-    pub fn write_node(account_data:&mut[u8],index:u64,node:&SlabNode)->Result<()>{
-
-        if index == 0 {
-            if index == 0 { return Err(ErrorCode::IndexOutOfBound.into()); }
-            let off = Self::node_offset(index);
-            let ns = Self::node_size();
-            let end = off.checked_add(ns).ok_or(ErrorCode::IndexOutOfBound)?;
-            require!(end <= account_data.len(), ErrorCode::IndexOutOfBound);
-            account_data[off..end].copy_from_slice(bytemuck::bytes_of(node));
-            Ok(())
+    pub fn write_node(account_data: &mut [u8], index: u64, node: &SlabNode) -> Result<()> {
+        if index == 0 { return Err(ErrorCode::IndexOutOfBound.into()); }
+        let off = Self::node_offset(index);
+        let ns = Self::node_size();
+        let end = off.checked_add(ns).ok_or(ErrorCode::IndexOutOfBound)?;
+        require!(end <= account_data.len(), ErrorCode::IndexOutOfBound);
+        account_data[off..end].copy_from_slice(bytemuck::bytes_of(node));
+        Ok(())
     }
 
     fn allocate_leaf(account_data: &mut [u8], node: &SlabNode) -> Result<u64> {
@@ -151,7 +149,7 @@ impl Slab{
         header.order_count = header.order_count.checked_add(1).ok_or(ErrorCode::AdditionOverflow)?;
 
         Self::write_header(account_data, &header)?;
-        
+
         Ok(idx)
     }
 
@@ -183,7 +181,7 @@ impl Slab{
 
         let free_node = SlabNode {
             tag: node_tag::FREE,
-            padding0: [0u8; 7],
+            padding0: [0u8; 15],
             key: 0,
             next: header.free_list_head,
             owner: [0u8; 32],
@@ -192,7 +190,7 @@ impl Slab{
             left: 0,
             right: 0,
             crit_bit: 0,
-            padding1: [0u8; 23],
+            padding1: [0u8; 15],
         };
 
         Self::write_node(account_data, idx, &free_node)?;
@@ -269,10 +267,10 @@ impl Slab{
     /// - Create inner node I with crit_bit, children assigned according to bit
     /// - Splice I into tree (update parent's child or root)
     pub fn insert(account_data: &mut [u8], key: u128, owner: Pubkey, qty: u64, order_id: u128) -> Result<()> {
-        let owner_bytes: [u8; 32] = owner.into();
+        let owner_bytes: [u8; 32] = owner.to_bytes();
         let leaf_node = SlabNode {
             tag: node_tag::LEAF,
-            padding0: [0u8; 7],
+            padding0: [0u8; 15],
             key,
             next: 0,
             owner: owner_bytes,
@@ -281,7 +279,7 @@ impl Slab{
             left: 0,
             right: 0,
             crit_bit: 0,
-            padding1: [0u8; 23],
+            padding1: [0u8; 15],
         };
 
         let mut header = Self::read_header(account_data)?;
@@ -341,7 +339,7 @@ impl Slab{
 
         let inner_node = SlabNode {
             tag: node_tag::INNER,
-            padding0: [0u8; 7],
+            padding0: [0u8; 15],
             key: 0,
             next: 0,
             owner: [0u8; 32],
@@ -350,7 +348,7 @@ impl Slab{
             left: left_idx,
             right: right_idx,
             crit_bit: new_crit_bit,
-            padding1: [0u8; 23],
+            padding1: [0u8; 15],
         };
 
         // allocate index for inner node and write it
@@ -484,3 +482,4 @@ impl Slab{
     pub fn get_price_from_key(key: u128) -> u64 { (key >> 64) as u64 }
 
 }
+
