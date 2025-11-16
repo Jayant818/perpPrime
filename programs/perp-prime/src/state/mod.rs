@@ -8,6 +8,7 @@ pub mod user_position;
 pub mod slab_tree;
 pub mod order;
 pub mod events;
+pub mod open_orders;
 
 pub use global_config::*;
 pub use user::*;
@@ -19,3 +20,4 @@ pub use user_position::*;
 pub use slab_tree::*;
 pub use order::*;
 pub use events::*;
+pub use open_orders::*;

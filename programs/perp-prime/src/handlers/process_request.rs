@@ -27,8 +27,7 @@ fn emit_fill_event(
         taker_side: taker_side as u8,
         padding:[0;15],
     };
-
-
+    
     // let fill_bytes = bytes_of(&fill);
     // let mut raw = [0u8;112];
     // raw[..fill_bytes.len()].copy_from_slice(fill_bytes);

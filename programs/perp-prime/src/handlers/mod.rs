@@ -3,9 +3,13 @@ pub mod deposit_collateral;
 pub mod initialize_market;
 pub mod place_perp_order;
 pub mod process_request;
+pub mod cancel_perp_order;
+pub mod create_open_orders;
 
 pub use initialize::*;
 pub use deposit_collateral::*;
 pub use initialize_market::*;
 pub use place_perp_order::*;
 pub use process_request::*;
+pub use cancel_perp_order::*;
+pub use create_open_orders::*;

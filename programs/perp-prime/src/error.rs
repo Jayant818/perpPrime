@@ -62,6 +62,14 @@ pub enum ErrorCode {
     #[msg("Invalid Order Side")]
     InvalidOrderSide,
 
+    #[msg("Max Order Reached")]
+    MaxOrderReached,
+
+    #[msg("Order not found")]
+    OrderNotFound,
+
+    #[msg("Invalid Owner Mismatch")]
+    InvalidOwner,
 }   
 
 

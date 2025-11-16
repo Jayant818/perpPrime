@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use bytemuck::{Zeroable,Pod};
 
-#[derive(Clone,Copy,AnchorDeserialize,AnchorSerialize,Default)]
+#[derive(Clone,Copy,AnchorDeserialize,AnchorSerialize,Default,Debug,InitSpace)]
 #[repr(C)]
 pub enum OrderType{
     #[default]
@@ -18,7 +18,7 @@ pub enum OrderSide{
 }
 
 #[repr(C)]
-#[derive(Clone,Copy,AnchorDeserialize,AnchorSerialize,InitSpace,Default)]
+#[derive(Clone,Copy,AnchorDeserialize,AnchorSerialize,InitSpace,Default,Debug)]
 pub enum OrderPosition{
     #[default]
     SHORT = 0,

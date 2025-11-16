@@ -1,23 +1,28 @@
 use anchor_lang::prelude::*;
 
-use crate::{OrderPosition, OrderSide};
+use crate::{OrderPosition, OrderSide,OrderType};
 
-#[derive(Clone,Debug,InitSpace,AnchorDeserialize,AnchorSerialize)]
+#[derive(Clone,Copy,Debug,InitSpace,AnchorDeserialize,AnchorSerialize,Default,PartialEq)]
 pub enum OrderStatus{
-    PENDING,
-    CANCELLED,
-    EXECUTED
+    #[default]
+    FREE, // -> the initial state of all nodes
+    PENDING, // -> sent to the request_queue, not yet on the book
+    OPEN,  // on the slab
+    FILLED, // completely filled
+    CANCELLED, // sent to the request queue, not yet removed from book
 }
 
-#[account]
-#[derive(InitSpace)]
+#[derive(Clone, Copy,Debug,AnchorDeserialize,AnchorSerialize,InitSpace)]
+#[repr(C)]
 pub struct Order{
-    pub user: Pubkey,
     pub status: OrderStatus,
     pub quantity: u64,
+    pub order_id :u128,
+    // Order Id provided by the client for easier lookup,
+    pub client_order_id:u64,
     pub side: OrderSide,
+    pub order_type: OrderType,
     pub position:OrderPosition,
-    pub collateral: u64,
+    pub locked_margin: u64,
     pub entry_price:u64,
-    pub bump:u8,
 }

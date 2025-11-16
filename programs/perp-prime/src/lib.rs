@@ -64,6 +64,11 @@ pub mod perp_prime {
         Ok(())
     }
 
+    pub fn create_open_orders_account(ctx:Context<OpenOrdersAccount>)->Result<()>{
+        handlers::create_open_orders_account(ctx)?;
+        Ok(())
+    }
+
 
 
 
