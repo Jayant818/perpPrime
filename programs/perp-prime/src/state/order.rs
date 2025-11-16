@@ -24,5 +24,5 @@ pub struct Order{
     pub order_type: OrderType,
     pub position:OrderPosition,
     pub locked_margin: u64,
-    pub entry_price:u64,
+    pub limit_price:u64,
 }

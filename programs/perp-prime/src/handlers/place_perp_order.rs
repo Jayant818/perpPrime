@@ -1,8 +1,6 @@
 use anchor_lang::prelude::*;
 use crate::{
-    CircularQueue, GlobalConfig, Market, Order, OrderPosition, OrderSide,
-    OrderStatus, OrderType, RequestItem, 
-    UserAccount, OpenOrdersAccount, error::ErrorCode
+    CircularQueue, GlobalConfig, Market, OpenOrdersAccount, Order, OrderPosition, OrderSide, OrderStatus, OrderType, RequestItem, UserAccount, error::ErrorCode, user
 };
 
 #[derive(Accounts)]
@@ -17,10 +15,11 @@ pub struct PlacePerpOrder<'info> {
     )]
     pub config: Account<'info, GlobalConfig>,
 
+    // User's main "bank" account
     #[account(
         mut,
         seeds = [b"user_account", signer.key().as_ref()],
-        bump = user_account.bump, 
+        bump = user_account.bump,
         has_one = owner @ ErrorCode::InvalidOwner,
     )]
     pub user_account: Account<'info, UserAccount>,
@@ -61,8 +60,8 @@ pub struct PlacePerpOrder<'info> {
 
 pub fn place_perp_order(
     ctx: Context<PlacePerpOrder>,
-    price_in_lots: u64, // Price must be in lots
-    qty_in_lots: u64,   // Qty must be in lots
+    limit_price_in_lots: u64, 
+    qty_in_lots: u64,
     side: OrderSide,
     position: OrderPosition,
     margin: u64,
@@ -74,40 +73,50 @@ pub fn place_perp_order(
     let market = &mut ctx.accounts.market;
     let open_orders_account = &mut ctx.accounts.open_orders_account;
 
-    require!(user_account.collateral_balance >= margin, ErrorCode::InsufficientMargin);
+    require!(user_account.available_collateral >= margin, ErrorCode::InsufficientCollateral);
 
-    // Lock margin 
-    user_account.collateral_balance = user_account.collateral_balance.checked_sub(margin).ok_or(ErrorCode::MathError)?;
-    user_account.locked_collateral = user_account.locked_collateral.checked_add(margin).ok_or(ErrorCode::MathError)?;
+    // we move margin from the available to locked, we don't touch the total_collateral
+    user_account.available_collateral = user_account.available_collateral.checked_sub(margin).ok_or(ErrorCode::SubtractionUnderFlow)?;
+    user_account.locked_collateral = user_account.locked_collateral.checked_add(margin).ok_or(ErrorCode::AdditionOverflow)?;
+
+    let price_for_book = match order_type {
+        OrderType::LimitOrder => limit_price_in_lots,
+        OrderType::MarketOrder => {
+            match side {
+                // For a market buy, set price to MAX to match all available asks
+                OrderSide::BID => u64::MAX,
+                // For a market sell, set price to 0 to match all available bids
+                OrderSide::ASK => 0, 
+            }
+        }
+    };
 
     market.sequence = market.sequence.checked_add(1).ok_or(ErrorCode::AdditionOverflow)?;
-    let order_id = (price_in_lots as u128) << 64 | (market.sequence as u128);
+    let order_id = (price_for_book as u128) << 64 | (market.sequence as u128);
 
-    // Find and fill an order slot in the OpenOrdersAccount
     let free_slot_index = open_orders_account.find_free_slot()?;
     
     let order_slot = &mut open_orders_account.orders[free_slot_index];
     *order_slot = Order {
-        status: OrderStatus::PENDING,
+        status: OrderStatus::PENDING, 
         order_id,
         client_order_id,
         quantity: qty_in_lots,
         side,
         position,
+        limit_price:limit_price_in_lots,
+        order_type,
         locked_margin: margin,
-        entry_price: price_in_lots, 
     };
     
-    // Fill the parallel lookup array
     open_orders_account.client_order_ids[free_slot_index] = client_order_id;
 
-    // Push to the Request Queue
     let request_item = RequestItem { 
         request_type: RequestType::OPEN,
-        order_type:order_type as u8,
+        order_type : order_type as u8,
         order_side: side as u8,
-        position:position as u8,
-        padding0:[0;4],
+        position : position as u8,
+        padding0: [0;4],
         quantity: qty_in_lots,
         user: ctx.accounts.signer.key(),
         order_id,

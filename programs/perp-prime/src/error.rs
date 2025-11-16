@@ -70,6 +70,15 @@ pub enum ErrorCode {
 
     #[msg("Invalid Owner Mismatch")]
     InvalidOwner,
+
+    #[msg("order is not cancellable")]
+    OrderNotCancelable,
+
+    #[msg("Order Already Processed")]
+    OrderAlreadyProcessed,
+
+    #[msg("Order Id Mismatch")]
+    OrderIdMismatch,
 }   
 
 

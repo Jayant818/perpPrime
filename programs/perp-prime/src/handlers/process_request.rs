@@ -2,9 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::TokenAccount;
 use bytemuck::{bytes_of, checked::cast};
 
-use crate::{AnyEvent, CircularQueue, EventQueueEntry, FillEventPod, GlobalConfig, Market, OrderSide, RequestItem, Slab, SlabNode, array_to_pubkey, error::ErrorCode, pubkey_to_array};
-
-
+use crate::{AnyEvent, CancelEventPod, CircularQueue, EventQueueEntry, FillEventPod, GlobalConfig, Market, OpenOrdersAccount, OrderSide, OrderStatus, RequestItem, Slab, SlabNode, array_to_pubkey, error::ErrorCode, pubkey_to_array};
 
 fn emit_fill_event(
     event_queue: &mut [u8],
@@ -27,7 +25,7 @@ fn emit_fill_event(
         taker_side: taker_side as u8,
         padding:[0;15],
     };
-    
+
     // let fill_bytes = bytes_of(&fill);
     // let mut raw = [0u8;112];
     // raw[..fill_bytes.len()].copy_from_slice(fill_bytes);
@@ -153,12 +151,26 @@ pub struct ProcessRequest<'info>{
         bump = market.asks_bump
     )]
     pub asks: UncheckedAccount<'info>,
+
+    // This is provided by cranker by peeking the request Queue. Also we don't need the userAccount, cuz lock phle kar diya hai and unlocking and settling wagara consume_event mai hoga 
+    #[account(
+        // should cranker provide the user also
+        // seeds = [
+        //     b"open_orders",
+        //     owner.key().as_ref(),
+        //     market.key().as_ref()
+        // ],
+        // bump = open_orders_account.bump,
+    )]
+    pub open_orders_account: Account<'info,OpenOrdersAccount>,
 }
 
 const BID: u8 = 0;
 const ASK: u8 = 1;
 const MARKET_ORDER:u8 = 0;
 const LIMIT_ORDER:u8 = 1;
+const OPEN : u8 = 0;
+const CANCEL : u8 = 0;
 
 pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
@@ -168,18 +180,51 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
     let mut bids = ctx.accounts.bids.try_borrow_mut_data()?;
     let mut asks = ctx.accounts.asks.try_borrow_mut_data()?;
 
-    let item = CircularQueue::<RequestItem>::pop(&mut request_queue)?;
+    let open_orders_account = &mut ctx.accounts.open_orders_account;
 
-    let mut taker_order = match item {
-        Some(data)=>{
-            data
-        }
-        None => {
-            return Err(error!(ErrorCode::RequestQueueEmpty))
-        }
+    let peeked_value = CircularQueue::<RequestItem>::peek(&mut request_queue)?;
+
+    let request_item = match peeked_value {
+        Some(item)=>item,
+        None => return Ok(())
     };
 
+    // Check : cranker provided open order account owner should match request Item Owner
+    require_keys_eq!(taker_order.user, open_orders_account.owner, ErrorCode::InvalidOwner);
+
+    match request_item.request_type {
+        OPEN => {
+            handle_place_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut *event_queue)?;
+        },
+        CANCEL =>{
+            handle_cancel_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut *event_queue)?;
+        }
+    }
+
+    CircularQueue::pop(&mut request_queue)?;
+
+
     // we also need to find the price of the order that we poped from the request_queue, we have to order id , so we need to specify the order PDA
+
+     Ok(())
+}
+
+
+fn handle_place_order(
+    request_item:&RequestItem,
+    open_orders_account: &mut Account<OpenOrdersAccount>,
+    bids: &mut [u8],
+    asks: &mut [u8],
+    event_queue: &mut [u8]
+)->Result<()>{
+
+    let order_idx = open_orders_account.find_order_by_order_id(order.order_id)?;
+    let order = &mut open_orders_account.orders[order_idx];
+
+    require!(order.status == OrderStatus::PENDING, ErrorCode::OrderAlreadyProcessed);
+    require_eq!(order.order_id,request_item.order_id,ErrorCode::OrderIdMismatch);
+
+    order.status = OrderStatus::OPEN;
 
     match taker_order.order_side{
         ASK =>{
@@ -329,6 +374,55 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
             return Err(error!(ErrorCode::InvalidOrderSide));
         }
     }
+
+    Ok(())
+}
+
+fn handle_cancel_order(
+    request:&RequestItem,
+    open_orders_account: &mut Account<OpenOrdersAccount>,
+    bids: &mut [u8],
+    asks: &mut [u8],
+    event_queue:&mut [u8]
+)->Result<()>{
+
+    let order_index = open_orders_account.find_order_by_order_id(request.order_id)?;
+    let order = &mut open_orders_account.orders[order_index];
+
+    // checking if the order is cancelable, but why not pending order
+    require!(order.status == OrderStatus::OPEN,ErrorCode::OrderNotCancelable);
+
+    let node:SlabNode;
+
+    match order.side {
+        Bid =>{
+            // We are on the bid side 
+            node = Slab::remove_by_key( bids, request.order_id)?;
+        },
+        Ask=>{
+            node = Slab::remove_by_key(asks, request.order_id)?;
+        }
+    }
+
+    order.status = OrderStatus::CANCELLED;
+
+
+    let cancel_event  = CancelEventPod {
+        order_id: node.order_id,
+        owner:node.owner,
+        quantity:node.quantity,
+        padding_a: [0;32],
+        padding_b:[0;24],
+    };
+
+    let raw_event : AnyEvent = cast(cancel_event);
+
+    let item= EventQueueEntry { 
+        timestamp: Clock::get()?.unix_timestamp, 
+        raw: raw_event,
+    };
+
+    CircularQueue::<EventQueueEntry>::push(event_queue, &item)?;
 
     Ok(())
 }

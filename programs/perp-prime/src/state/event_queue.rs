@@ -36,10 +36,11 @@ const _: () = assert!(std::mem::size_of::<FillEventPod>() == EVENT_SIZE);
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub struct CancelEventPod {
-    pub order_id: u64,
+    pub order_id: u128,
     pub owner: [u8; 32],
     pub quantity: u64,
-    pub padding: [u8; 64], // pads to EVENT_SIZE
+    pub padding_a: [u8; 32],
+    pub padding_b: [u8; 24],
 }
 const _: () = assert!(std::mem::size_of::<CancelEventPod>() == EVENT_SIZE);
 
