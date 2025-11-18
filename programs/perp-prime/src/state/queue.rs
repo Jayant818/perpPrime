@@ -31,13 +31,6 @@ impl QueueHeader{
     }
 }
 
-pub struct CircularQueue<T>{
-    phantom: std::marker::PhantomData<T>,
-}
-
-impl<T> CircularQueue<T> 
-where  T : Pod+Zeroable+Copy,
-{
     pub fn intialize(account_data:&mut[u8],capacity:usize)->Result<()>{
         let header_size = std::mem::size_of::<QueueHeader>();
 

@@ -1,5 +1,9 @@
+use std::slice::from_raw_parts_mut;
+
 use anchor_lang::prelude::*;
 use bytemuck::{Pod, Zeroable};
+
+use crate::{QueueHeader, EventQueueEntry};
 
 pub const EVENT_SIZE: usize = 112;
 
@@ -85,4 +89,91 @@ pub fn pubkey_to_array(pk: Pubkey) -> [u8; 32] {
 
 pub fn array_to_pubkey(bytes: [u8; 32]) -> Pubkey {
     Pubkey::new_from_array(bytes)
+}
+
+#[repr(C)]
+#[account(zero_copy)]
+pub struct EventQueueAccount{
+    pub header: QueueHeader,
+    entries: [EventQueueEntry;0],
+}
+
+impl EventQueueAccount{
+    fn get_entries(&self)-> &[EventQueueEntry] {
+        // We are getting a pointer to self and offsetting it past the header.
+        let entries_ptr = unsafe {
+            // *const self - raw pointer to the struct 
+            // *const u8 - reintrepreting the pointer as the byte pointer
+            (self as *const Self as *const u8).add(std::mem::size_of::<QueueHeader>())
+        } as *const EventQueueEntry;
+
+        // we use capacity from the header to create a valid slice
+        let capacity = self.header.capacity as usize;
+        unsafe{
+            slice::from_raw_parts(entries_ptr,capacity)
+        }
+    }
+
+    fn get_entries_mut(&mut self)-> &mut [EventQueueEntry]{
+        // get mut ptr for entries 
+        let entries_ptr = unsafe {
+            (self as *const Self as *const u8).add(std::mem::size_of::<QueueHeader>())
+        } as *mut EventQueueEntry;
+
+        let capacity = self.header.capacity as usize;
+
+        unsafe {
+            slice::from_raw_parts_mut(entries_ptr, capacity)
+        }
+    }
+
+    pub fn initialize(&mut self, capacity: u64) {
+        self.header.head = 0;
+        self.header.count = 0;
+        self.header.tail = 0;
+        self.header.capacity = capacity;
+    }
+
+    pub fn push(&mut self,item:&EventQueueEntry)->Result<()>{
+
+        require!(self.header.count < self.header.capacity, ErrorCode::QueueIsFull);
+        
+        let slot_index = self.header.tail as usize;
+
+        let entries = self.get_entries_mut();
+        entries[slot_index] = *item;
+        self.header.tail = (self.header.tail+1) % self.header.capacity;
+        self.header.count +=1;
+
+        Ok(())
+    }
+
+    pub fn pop(&mut self)-> Result<Option<ResultItem>>{
+        if self.header.count == 0 {
+            return Ok(None)
+        }
+
+        let slot_index = self.header.tail as usize;
+
+        // getting an immutable copy 
+        let item_copy = self.get_entries()[slot_index];
+
+        self.header.head = (self.header.head + 1)%self.header.capacity;
+        self.header.count -=1;
+
+        Ok(Some(item_copy))
+    }
+
+    pub fn peek(&self)-> Result<Option<EventQueueEntry>>{
+        if self.header.count == 0 {
+            return Ok(None)
+        }
+
+        let slot_index = self.header.tail as usize;
+
+        let item = self.get_entries()[slot_index];
+
+        return Ok(Some(item))
+    }
+
 }

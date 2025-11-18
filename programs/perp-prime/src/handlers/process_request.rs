@@ -2,10 +2,10 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::TokenAccount;
 use bytemuck::{bytes_of, checked::cast};
 
-use crate::{AnyEvent, CancelEventPod, CircularQueue, EventQueueEntry, FillEventPod, GlobalConfig, Market, OpenOrdersAccount, OrderSide, OrderStatus, RequestItem, Slab, SlabNode, array_to_pubkey, error::ErrorCode, pubkey_to_array};
+use crate::{AnyEvent, CancelEventPod, CircularQueue, EventQueueAccount, EventQueueEntry, FillEventPod, GlobalConfig, Market, OpenOrdersAccount, OrderSide, OrderStatus, RequestItem, RequestQueueAccount, Slab, SlabNode, array_to_pubkey, error::ErrorCode, pubkey_to_array};
 
 fn emit_fill_event(
-    event_queue: &mut [u8],
+    event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>,
     maker: Pubkey,
     maker_order_id: u128,
     price: u64,
@@ -37,13 +37,13 @@ fn emit_fill_event(
         timestamp: Clock::get()?.unix_timestamp,
     };
 
-    CircularQueue::<EventQueueEntry>::push(event_queue, &item)?;
+    event_queue.push(&item);
     Ok(())
 }
 
 fn process_fill(
     bids: &mut [u8],
-    event_queue: &mut [u8],
+    event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>,
     taker_order: &mut RequestItem,
     max_bid_idx: u64,
     mut max_bid: SlabNode, 
@@ -112,30 +112,27 @@ pub struct ProcessRequest<'info>{
         mut,
         seeds = [
             b"request_queue",
-            base_mint.key().as_ref(),
-            quote_mint.key().as_ref()
+            market.key().as_ref(),
         ],
         bump = market.request_queue_bump,
     )]
-    pub request_queue: UncheckedAccount<'info>,
+    pub request_queue: AccountLoader<'info,RequestQueueAccount>,
 
     #[account(
         mut,
         seeds = [
             b"event_queue",
-            base_mint.key().as_ref(),
-            quote_mint.key().as_ref()
+            market.key().as_ref(),
         ],
         bump = market.event_queue_bump,
     )]
-    pub event_queue: UncheckedAccount<'info>,
+    pub event_queue: AccountLoader<'info,EventQueueAccount>,
 
     #[account(
         mut,
         seeds = [
             b"bids",
-            base_mint.key().as_ref(),
-            quote_mint.key().as_ref(),
+            market.key().as_ref(),
         ],
         bump = market.bids_bump,
     )]
@@ -145,8 +142,7 @@ pub struct ProcessRequest<'info>{
         mut,
         seeds = [
             b"asks",
-            base_mint.key().as_ref(),
-            quote_mint.key().as_ref(),
+            market.key().as_ref(),
         ],
         bump = market.asks_bump
     )]
@@ -174,8 +170,8 @@ const CANCEL : u8 = 0;
 
 pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
-    let mut request_queue = ctx.accounts.request_queue.try_borrow_mut_data()?;
-    let mut event_queue = ctx.accounts.event_queue.try_borrow_mut_data()?;
+    let mut request_queue = ctx.accounts.request_queue.load_mut()?;
+    let mut event_queue: std::cell::RefMut<'_, EventQueueAccount> = ctx.accounts.event_queue.load_mut()?;
 
     let mut bids = ctx.accounts.bids.try_borrow_mut_data()?;
     let mut asks = ctx.accounts.asks.try_borrow_mut_data()?;
@@ -194,14 +190,14 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
     match request_item.request_type {
         OPEN => {
-            handle_place_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut *event_queue)?;
+            handle_place_order(&request_item, open_orders_account, &mut *bids, &mut *asks, event_queue)?;
         },
         CANCEL =>{
             handle_cancel_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut *event_queue)?;
         }
     }
 
-    CircularQueue::pop(&mut request_queue)?;
+    request_queue.pop()?;
 
 
     // we also need to find the price of the order that we poped from the request_queue, we have to order id , so we need to specify the order PDA
@@ -215,7 +211,7 @@ fn handle_place_order(
     open_orders_account: &mut Account<OpenOrdersAccount>,
     bids: &mut [u8],
     asks: &mut [u8],
-    event_queue: &mut [u8]
+    event_queue: std::cell::RefMut<'_, EventQueueAccount>
 )->Result<()>{
 
     let order_idx = open_orders_account.find_order_by_order_id(order.order_id)?;

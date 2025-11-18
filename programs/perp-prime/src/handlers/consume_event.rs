@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::Mint;
 use bytemuck::checked::from_bytes;
 
-use crate::{CANCEL_EVENT, CancelEventPod, CircularQueue, EventQueue, FILL_EVENT, FillEventPod, Market, error::ErrorCode};
+use crate::{CANCEL_EVENT, CancelEventPod, CircularQueue, EventQueue, EventQueueAccount, FILL_EVENT, FillEventPod, Market, error::ErrorCode};
 
 #[derive(Accounts)]
 pub struct ConsumeEvents<'info>{
@@ -23,12 +23,11 @@ pub struct ConsumeEvents<'info>{
     #[account(
         seeds = [
             b"event_queue",
-            base_mint.key().as_ref(),
-            quote_mint.key().as_ref()
+            market.key().as_ref(),
         ],
         bump = market.event_queue_bump,
     )]
-    pub event_queue: AccountLoader<'info,EventQueue>,
+    pub event_queue: AccountLoader<'info,EventQueueAccount>,
 
     pub base_mint: InterfaceAccount<'info,Mint>,
     pub quote_mint:InterfaceAccount<'info,Mint>,
@@ -36,12 +35,12 @@ pub struct ConsumeEvents<'info>{
 
 pub fn consume_event(ctx:Context<ConsumeEvents>)->Result<()>{
 
-    let mut event_queue = ctx.accounts.event_queue.try_borrow_mut_data()?;
+    let mut event_queue = ctx.accounts.event_queue.load_mut()?;
     let market = &ctx.accounts.market;
 
     let remaining_account_iter = &mut ctx.remaining_accounts.iter();
 
-    let event = match CircularQueue::<EventQueue>::peek(&mut *event_queue)? {
+    let event = match event_queue.peek() ? {
         Some(event) => event,
         None => {
             msg!("Event Queue Empty");

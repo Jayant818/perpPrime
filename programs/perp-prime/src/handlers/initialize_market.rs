@@ -2,7 +2,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
 
-use crate::{CircularQueue, EventQueueEntry, GlobalConfig, Market, QueueHeader, RequestItem, RequestQueueAccount, Slab};
+use crate::{CircularQueue, EventQueueAccount, EventQueueEntry, GlobalConfig, Market, QueueHeader, RequestItem, RequestQueueAccount, Slab};
 
 #[derive(Accounts)]
 pub struct InitializeMarket<'info>{
@@ -39,11 +39,10 @@ pub struct InitializeMarket<'info>{
     #[account(
         init,
         payer = signer,
-        space = 8 + std::mem::size_of::<QueueHeader>() + (128* std::mem::size_of::<RequestItem>()),
+        space = 8 + std::mem::size_of::<QueueHeader>() + (128 * std::mem::size_of::<RequestItem>()),
         seeds  = [
             b"request_queue",
-            base_mint.key().as_ref(),
-            quote_mint.key().as_ref()
+            market.key().as_ref(),
         ],
         bump,
     )]
@@ -52,16 +51,14 @@ pub struct InitializeMarket<'info>{
     #[account(
         init,
         payer = signer,
-        space = 8 +  std::mem::size_of::<QueueHeader>() + std::mem::size_of::<T>(),
+        space = 8 +  std::mem::size_of::<QueueHeader>() + (256 * std::mem::size_of::<EventQueueEntry>()),
         seeds = [
             b"event_queue",
-            base_mint.key().as_ref(),
-            quote_mint.key().as_ref()
+            market.key().as_ref(),
         ],
         bump,
     )]
-    /// CHECK:
-    pub event_queue: UncheckedAccount<'info>,
+    pub event_queue: AccountLoader<'info,EventQueueAccount>,
 
     #[account(
         init,
@@ -69,8 +66,7 @@ pub struct InitializeMarket<'info>{
         space = 8,
         seeds = [
             b"bids",
-            base_mint.key().as_ref(),
-            quote_mint.key().as_ref(),
+            market.key().as_ref(),
         ],
         bump,
     )]
@@ -82,8 +78,7 @@ pub struct InitializeMarket<'info>{
         space = 8,
         seeds = [
             b"asks",
-            base_mint.key().as_ref(),
-            quote_mint.key().as_ref(),
+            market.key().as_ref(),
         ],
         bump,
     )]
@@ -107,16 +102,14 @@ pub fn initialize_market(
     quote_lot_size:u64,
 )->Result<()>{
 
-    let mut event_queue = ctx.accounts.event_queue.try_borrow_mut_data()?;
-    let mut request_queue = ctx.accounts.request_queue.try_borrow_mut_data()?;
+    let mut event_queue = ctx.accounts.event_queue.load_init()?;
+    let mut request_queue = ctx.accounts.request_queue.load_init()?;
 
     let mut bids_slab = ctx.accounts.bids.try_borrow_mut_data()?;
     let mut asks_slab = ctx.accounts.asks.try_borrow_mut_data()?;
     
-
-    CircularQueue::<RequestItem>::intialize(&mut request_queue, 128)?;
-
-    CircularQueue::<EventQueueEntry>::intialize(&mut event_queue, 256)?;
+    request_queue.initialize(128)?;
+    event_queue.initialize(256)?; 
 
     Slab::initialize(&mut bids_slab)?;
     Slab::initialize(&mut asks_slab)?;

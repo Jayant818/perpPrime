@@ -27,7 +27,7 @@ pub struct PlacePerpOrder<'info> {
     #[account(
         mut,
         seeds = [b"market", pair.as_bytes()],
-        bump,
+        bump = market.market_bump,
     )]
     pub market: Account<'info, Market>,
 
