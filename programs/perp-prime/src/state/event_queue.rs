@@ -9,10 +9,13 @@ pub const ANY_RESERVED_B: usize = 32;
 pub const ANY_RESERVED_C: usize = 15;
 const _: () = assert!(ANY_RESERVED_A + ANY_RESERVED_B + ANY_RESERVED_C == EVENT_SIZE - 1);
 
+pub const FILL_EVENT: u8 = 0;
+pub const CANCEL_EVENT:u8 = 1;
+
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub struct AnyEvent {
-    pub tag: u8,
+    pub tag: u8,   // 0 - FIll , 1 - Cancel
     // split reserved into smaller arrays to satisfy derive checks
     pub reserved_a: [u8; ANY_RESERVED_A],
     pub reserved_b: [u8; ANY_RESERVED_B],

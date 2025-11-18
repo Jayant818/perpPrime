@@ -7,7 +7,7 @@ use crate::{
 #[instruction(pair: String)]
 pub struct PlacePerpOrder<'info> {
     #[account(mut)]
-    pub signer: Signer<'info>,
+    pub owner: Signer<'info>,
 
     #[account(
         seeds = [b"config"],
@@ -18,7 +18,7 @@ pub struct PlacePerpOrder<'info> {
     // User's main "bank" account
     #[account(
         mut,
-        seeds = [b"user_account", signer.key().as_ref()],
+        seeds = [b"user_account", owner.key().as_ref()],
         bump = user_account.bump,
         has_one = owner @ ErrorCode::InvalidOwner,
     )]
@@ -35,7 +35,7 @@ pub struct PlacePerpOrder<'info> {
         mut,
         seeds = [
             b"open_orders",
-            signer.key().as_ref(),
+            owner.key().as_ref(),
             market.key().as_ref()
         ],
         bump = open_orders_account.bump,
@@ -118,7 +118,7 @@ pub fn place_perp_order(
         position : position as u8,
         padding0: [0;4],
         quantity: qty_in_lots,
-        user: ctx.accounts.signer.key(),
+        user: ctx.accounts.owner.key(),
         order_id,
     };
 

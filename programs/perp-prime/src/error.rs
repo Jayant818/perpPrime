@@ -79,6 +79,9 @@ pub enum ErrorCode {
 
     #[msg("Order Id Mismatch")]
     OrderIdMismatch,
+
+    #[msg("Invalid Event Type")]
+    InvalidEventType,
 }   
 
 

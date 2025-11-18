@@ -34,7 +34,6 @@ impl OpenOrdersAccount {
                 return Ok(i)
             }
         }
-
         Err(error!(ErrorCode::OrderNotFound))
     }
 

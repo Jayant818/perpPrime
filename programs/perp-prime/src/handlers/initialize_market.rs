@@ -2,7 +2,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
 
-use crate::{CircularQueue, EventQueue, EventQueueEntry, GlobalConfig, Market, QueueHeader, RequestItem, Slab};
+use crate::{CircularQueue, EventQueueEntry, GlobalConfig, Market, QueueHeader, RequestItem, RequestQueueAccount, Slab};
 
 #[derive(Accounts)]
 pub struct InitializeMarket<'info>{
@@ -39,7 +39,7 @@ pub struct InitializeMarket<'info>{
     #[account(
         init,
         payer = signer,
-        space = 8 + std::mem::size_of::<QueueHeader>() + std::mem::size_of::<T>(),
+        space = 8 + std::mem::size_of::<QueueHeader>() + (128* std::mem::size_of::<RequestItem>()),
         seeds  = [
             b"request_queue",
             base_mint.key().as_ref(),
@@ -47,8 +47,7 @@ pub struct InitializeMarket<'info>{
         ],
         bump,
     )]
-    /// CHECK;
-    pub request_queue: UncheckedAccount<'info>,
+    pub request_queue: AccountLoader<'info,RequestQueueAccount>,
 
     #[account(
         init,
