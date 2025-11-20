@@ -1,7 +1,7 @@
 use anchor_lang::prelude::{pubkey::PubkeyError, *};
 use anchor_spl::token_interface::Mint;
 use bytemuck::{bytes_of, checked::{from_bytes, try_from_bytes}};
-use crate::{UserAccount, UserPosition, error::ErrorCode};
+use crate::{OpenOrdersAccount, UserAccount, UserPosition, error::ErrorCode};
 
 use crate::{CANCEL_EVENT, CancelEventPod, CircularQueue, EventQueue, EventQueueAccount, FILL_EVENT, FillEventPod, Market, error::ErrorCode};
 
@@ -76,7 +76,46 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
 
                 msg!("FIlled: Price {} Qty {}", fill_event.price,fill_event.quantity);
             },
-            CANCEL_EVENT =>{},
+            CANCEL_EVENT =>{
+                let cancel_event :&CancelEventPod = try_from_bytes(raw_bytes).map_err(|_| error!(ErrorCode::InvalidEventType))?;
+                // probably have to remove from openOrdersAccount from here , but for that we need either client Id , or something 
+
+                let user_pk = Pubkey::new_from_array(cancel_event.owner);
+
+                // Determine user open_orders_account 
+                let (expected_open_orders_account,_) = Pubkey::find_program_address(
+                    &[
+                        b"open_orders",
+                        market.key().as_ref(),
+                        user_pk.key().as_ref()
+                    ], 
+                    &crate::ID
+                );
+
+                let open_orders_account = match ctx.remaining_accounts.iter().find(|acc| acc.key() == expected_open_orders_account){
+                    Some(data)=>data,
+                    None => {
+                        msg!("Warning: OpenOrders Account not provided for {}", owner_pk);
+                        return Ok(())
+                    }
+                };
+
+                let mut data = open_orders_account.try_borrow_mut_data()?;
+
+                if data.len() < 8 {
+                    return Err(error!(ErrorCode::MathError));
+                }
+
+                let mut slice = &data[8..];
+                let mut open_orders_account:OpenOrdersAccount = AnchorDeserialize::deserialize(&mut slice)?;
+
+                let order_idx = open_orders_account.find_order_by_order_id(cancel_event.order_id)?;
+
+                let order = open_orders_account.orders[order_idx];
+
+                order.status = crate::OrderStatus::FREE;
+                // But what if the order is already partially filled than what we do in that case.
+            },
             _=>{}
         }
     }

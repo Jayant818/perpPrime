@@ -390,11 +390,11 @@ fn handle_cancel_order(
     let node:SlabNode;
 
     match order.side {
-        Bid =>{
+        OrderSide::BID =>{
             // We are on the bid side 
             node = Slab::remove_by_key( bids, request.order_id)?;
         },
-        Ask=>{
+        OrderSide::ASK=>{
             node = Slab::remove_by_key(asks, request.order_id)?;
         }
     }
@@ -402,13 +402,11 @@ fn handle_cancel_order(
     order.status = OrderStatus::CANCELLED;
 
 
-    let cancel_event  = CancelEventPod {
-        order_id: node.order_id,
-        owner:node.owner,
-        quantity:node.quantity,
-        padding_a: [0;32],
-        padding_b:[0;24],
-    };
+    let cancel_event  = CancelEventPod::new(
+        node.order_id, 
+        node.owner, 
+        node.quantity
+    );
 
     let raw_event : AnyEvent = cast(cancel_event);
 

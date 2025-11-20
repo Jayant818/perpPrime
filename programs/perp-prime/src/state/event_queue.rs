@@ -81,6 +81,23 @@ pub struct CancelEventPod {
 }
 const _: () = assert!(std::mem::size_of::<CancelEventPod>() == EVENT_SIZE);
 
+impl CancelEventPod {
+    pub fn new(
+        order_id:u128,
+        owner:[u8;32],
+        quantity:u64,
+    )->Self{
+        Self { 
+            tag: 1, 
+            _padding1: [0;7], 
+            order_id: bytemuck::cast(order_id), 
+            owner, 
+            quantity, 
+            _padding2: [0;48] 
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Pod,Zeroable, Clone,Copy, Debug)]
 pub struct EventQueueEntry {
