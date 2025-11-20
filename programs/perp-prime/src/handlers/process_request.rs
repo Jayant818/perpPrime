@@ -189,10 +189,10 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
     match request_item.request_type {
         OPEN => {
-            handle_place_order(&request_item, open_orders_account, &mut *bids, &mut *asks, event_queue)?;
+            handle_place_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut event_queue)?;
         },
         CANCEL =>{
-            handle_cancel_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut *event_queue)?;
+            handle_cancel_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut event_queue)?;
         }
     }
 
@@ -210,7 +210,7 @@ fn handle_place_order(
     open_orders_account: &mut Account<OpenOrdersAccount>,
     bids: &mut [u8],
     asks: &mut [u8],
-    event_queue: std::cell::RefMut<'_, EventQueueAccount>
+    event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>
 )->Result<()>{
 
     let order_idx = open_orders_account.find_order_by_order_id(order.order_id)?;
@@ -378,44 +378,52 @@ fn handle_cancel_order(
     open_orders_account: &mut Account<OpenOrdersAccount>,
     bids: &mut [u8],
     asks: &mut [u8],
-    event_queue:&mut [u8]
+    event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>,
 )->Result<()>{
 
     let order_index = open_orders_account.find_order_by_order_id(request.order_id)?;
     let order = &mut open_orders_account.orders[order_index];
 
-    // checking if the order is cancelable, but why not pending order
-    require!(order.status == OrderStatus::OPEN,ErrorCode::OrderNotCancelable);
+    if order.status == OrderStatus::FREE || order.status == OrderStatus::FILLED {
+        return Ok(())
+    }
 
     let node:SlabNode;
 
-    match order.side {
+    let remove_result = match order.side {
         OrderSide::BID =>{
             // We are on the bid side 
-            node = Slab::remove_by_key( bids, request.order_id)?;
+            Slab::remove_by_key( bids, request.order_id)
         },
         OrderSide::ASK=>{
-            node = Slab::remove_by_key(asks, request.order_id)?;
+            Slab::remove_by_key(asks, request.order_id)
         }
-    }
-
-    order.status = OrderStatus::CANCELLED;
-
-
-    let cancel_event  = CancelEventPod::new(
-        node.order_id, 
-        node.owner, 
-        node.quantity
-    );
-
-    let raw_event : AnyEvent = cast(cancel_event);
-
-    let item= EventQueueEntry { 
-        timestamp: Clock::get()?.unix_timestamp, 
-        raw: raw_event,
     };
 
-    CircularQueue::<EventQueueEntry>::push(event_queue, &item)?;
+    match remove_result{
+        Ok(node)=>{
+            let cancel_event = CancelEventPod::new(
+                node.order_id, 
+                node.owner, 
+                node.quantity
+            );
+
+            let raw_event = cast(cancel_event);
+
+            let item = EventQueueEntry{
+                raw:raw_event,
+                timestamp:Clock::get()?.unix_timestamp,
+            };
+
+            event_queue.push(&item);
+
+            order.status = OrderStatus::CANCELLED;
+
+        },
+        Err=>{
+            msg!("Order not found in the slab, assuming either it is filled or already cancelled ");
+        }
+    }
 
     Ok(())
 }

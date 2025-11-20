@@ -1,5 +1,5 @@
 use anchor_lang::prelude::{pubkey::PubkeyError, *};
-use anchor_spl::token_interface::Mint;
+use anchor_spl::{associated_token::spl_associated_token_account::solana_program::compute_units::sol_remaining_compute_units, token_interface::Mint};
 use bytemuck::{bytes_of, checked::{from_bytes, try_from_bytes}};
 use crate::{OpenOrdersAccount, UserAccount, UserPosition, error::ErrorCode};
 
@@ -39,7 +39,16 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
     let mut event_queue = ctx.accounts.event_queue.load_mut()?;
     let market = &ctx.accounts.market;
 
-    for _ in 0.max_events {
+    let limit = std::cmp::min(event_queue.header.count, max_events);
+
+    for _ in 0..limit {
+
+        // If we are low on CU, then stop
+        if sol_remaining_compute_units() < 5000 {
+            msg!("Compute budget low, exiting event loop early.");
+            break;
+        }
+
         // first we are peeking 
         let event = match event_queue.peek()? {
             Some(item)=>item,
