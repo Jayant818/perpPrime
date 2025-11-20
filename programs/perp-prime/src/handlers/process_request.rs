@@ -16,15 +16,14 @@ fn emit_fill_event(
     let maker_bytes = pubkey_to_array(maker);
     let taker_bytes = pubkey_to_array(taker);
 
-    let fill = FillEventPod {
-        maker:maker_bytes,
-        order_id: maker_order_id,
+    let fill = FillEventPod::new(
+        pubkey_to_array(maker),
+        maker_order_id,
         price,
         quantity,
-        taker:taker_bytes,
-        taker_side: taker_side as u8,
-        padding:[0;15],
-    };
+        pubkey_to_array(taker),
+        taker_side
+    );
 
     // let fill_bytes = bytes_of(&fill);
     // let mut raw = [0u8;112];

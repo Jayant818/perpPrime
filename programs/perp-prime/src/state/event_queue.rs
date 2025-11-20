@@ -20,47 +20,66 @@ pub const CANCEL_EVENT:u8 = 1;
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub struct AnyEvent {
     pub tag: u8,   // 0 - FIll , 1 - Cancel
+    pub padding:[u8;7],
     // split reserved into smaller arrays to satisfy derive checks
-    pub reserved_a: [u8; ANY_RESERVED_A],
-    pub reserved_b: [u8; ANY_RESERVED_B],
-    pub reserved_c: [u8; ANY_RESERVED_C],
+    // pub reserved_a: [u8; ANY_RESERVED_A],
+    // pub reserved_b: [u8; ANY_RESERVED_B],
+    // pub reserved_c: [u8; ANY_RESERVED_C],
+    pub data :[u8;104],
 }
 const _: () = assert!(std::mem::size_of::<AnyEvent>() == EVENT_SIZE);
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub struct FillEventPod {
-    pub taker: [u8; 32],
-    pub maker: [u8; 32],
-    pub order_id: u128,
-    pub price: u64,
-    pub quantity: u64,
+    pub tag: u8,  //  1
+    pub _padding1: [u8; 7], // 7  
+    pub taker: [u8; 32], // 32
+    pub maker: [u8; 32], // 32
+    pub order_id: [u64;2], // 16
+    pub price: u64, // 8
+    pub quantity: u64, // 8 
     pub taker_side: u8,     // 0 = Bid, 1 = Ask
-    pub padding: [u8; 15],  // pads to EVENT_SIZE
+    pub _padding2: [u8; 7],  // pads to EVENT_SIZE
 }
 const _: () = assert!(std::mem::size_of::<FillEventPod>() == EVENT_SIZE);
+
+impl FillEventPod {
+    pub fn new(
+        maker: [u8; 32], 
+        order_id: u128, 
+        price: u64, 
+        quantity: u64, 
+        taker: [u8; 32], 
+        taker_side: u8
+    )->Self{
+        Self { 
+            tag: 0, 
+            _padding1: [0;7], 
+            taker, 
+            maker, 
+            // convert u128 to [u64;2]
+            order_id: bytemuck::cast(order_id), 
+            price, 
+            quantity, 
+            taker_side, 
+            _padding2: [0;7] 
+        }
+
+    }
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub struct CancelEventPod {
-    pub order_id: u128,
+    pub tag:u8,
+    pub _padding1: [u8;7],
+    pub order_id: [u64;2],
     pub owner: [u8; 32],
     pub quantity: u64,
-    pub padding_a: [u8; 32],
-    pub padding_b: [u8; 24],
+    pub _padding2: [u8;48], 
 }
 const _: () = assert!(std::mem::size_of::<CancelEventPod>() == EVENT_SIZE);
-
-#[repr(C)]
-#[derive(Copy, Clone, Pod, Zeroable, Debug)]
-pub struct LiquidatePod {
-    pub liquidator: [u8; 32],
-    pub liquidated: [u8; 32],
-    pub position_size: u64,
-    pub price: u64,
-    pub padding: [u8; 32],
-}
-const _: () = assert!(std::mem::size_of::<LiquidatePod>() == EVENT_SIZE);
 
 #[repr(C)]
 #[derive(Pod,Zeroable, Clone,Copy, Debug)]
