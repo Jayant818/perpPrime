@@ -1,7 +1,7 @@
 use anchor_lang::prelude::{pubkey::PubkeyError, *};
 use anchor_spl::{associated_token::spl_associated_token_account::solana_program::compute_units::sol_remaining_compute_units, token_interface::Mint};
 use bytemuck::{bytes_of, checked::{from_bytes, try_from_bytes}};
-use crate::{OpenOrdersAccount, UserAccount, UserPosition, error::ErrorCode};
+use crate::{OpenOrdersAccount, UserAccount, UserPosition, error::ErrorCode, user};
 
 use crate::{CANCEL_EVENT, CancelEventPod, CircularQueue, EventQueue, EventQueueAccount, FILL_EVENT, FillEventPod, Market, error::ErrorCode};
 
@@ -83,6 +83,24 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                     fill_event.taker_side == 1, // if taker side is ask , then taker is selling and maker is buying,
                 )?;
 
+                // Reducing the locked margin & quantity from the OpenOrdersAccount
+                process_order_fill(
+                    &ctx.remaining_accounts, 
+                    &market.key(), 
+                    maker_pk, 
+                    fill_event.order_id, 
+                    fill_event.quantity,
+                )?; 
+
+                // We have only one order Id stored so that's a problem we have to store the ID of other party also.
+                process_order_fill(
+                    &ctx.remaining_accounts, 
+                    &market.key(), 
+                taker_pk, 
+                    fill_event.order_id, 
+                    fill_event.quantity
+                )?;               
+
                 msg!("FIlled: Price {} Qty {}", fill_event.price,fill_event.quantity);
             },
             CANCEL_EVENT =>{
@@ -109,26 +127,110 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                     }
                 };
 
+                // Determine user Account 
+                let (expected_user_account,_) = Pubkey::find_program_address(
+                    &[
+                    b"user_account",
+                    user_pk.key().as_ref()
+                    ], 
+                    &crate::ID
+                );
+
+                let user_account_info = match ctx.remaining_accounts.iter().find(|acc| acc.key() == expected_user_account){
+                    Some(user)=> user,
+                    None => {
+                        msg!("Warning: User Account not provided for {}", owner_pk);
+                        return Ok(())
+                    }
+                };
+
                 let mut data = open_orders_account.try_borrow_mut_data()?;
 
-                if data.len() < 8 {
-                    return Err(error!(ErrorCode::MathError));
-                }
-
-                let mut slice = &data[8..];
-                let mut open_orders_account:OpenOrdersAccount = AnchorDeserialize::deserialize(&mut slice)?;
+                let mut open_orders_account:OpenOrdersAccount = AnchorDeserialize::deserialize(&mut data)?;
 
                 let order_idx = open_orders_account.find_order_by_order_id(cancel_event.order_id)?;
 
-                let order = open_orders_account.orders[order_idx];
+                let order = &mut open_orders_account.orders[order_idx];
 
                 order.status = crate::OrderStatus::FREE;
-                // But what if the order is already partially filled than what we do in that case.
+                order.order_id = 0;
+                order.locked_margin = 0;
+                order.quantity = 0;
+                open_orders_account.client_order_ids[order_idx] = 0;
+
+
+                let mut writer = &mut data[..];
+                open_orders_account.try_serialize(&mut writer);
+
+                let user_account_data = user_account_info.try_borrow_mut_data()?;
+                let user_account:UserAccount = AccountDeserialize::try_deserialize(&mut user_account_data.as_ref())?;
+
+                user_account.locked_collateral = user_account.locked_collateral.checked_sub(order.locked_margin).ok_or(ErrorCode::SubtractionUnderFlow)?;
+                user_account.available_collateral = user_account.available_collateral.checked_add(order.locked_margin).ok_or(ErrorCode::AdditionOverflow)?;
+
+                // Serializing UserAccount Back
+                let mut writer = &mut user_account_data[..];
+                user_account.try_serialize(&mut writer)?;
+
+                msg!("Refunded {} to {}", locked_margin, user_key);
+                Ok(())
+
             },
-            _=>{}
+            _=>{
+                msg!("Unknown Event In the event queue found");
+                Ok(())
+            }
         }
     }
 
+}
+
+// releasing the margin as they are now moved to the userPosition PDA.
+fn process_order_fill(
+    remaining_accounts: &[AccountInfo],
+    market_key:Pubkey,
+    user_key:Pubkey,
+    order_id:u128,
+    filled_qty:u64,
+)->Result<()>{
+
+    let (open_order_pda,_) = Pubkey::find_program_address(&[
+        b"open_orders",
+        user_key.key().as_ref(),
+        market_key.key().as_ref(),
+    ], &crate::ID);
+
+    let open_order_account_info = match remaining_accounts.iter().find(|acc| acc.key() == open_order_pda) {
+        Some(data) => {
+            data
+        }
+        None=> {
+            msg!("Warning: Open Order Account is not provided for {}",user_key);
+            return Ok(())
+        }
+    };
+
+    let mut data = open_order_account_info.try_borrow_mut_data()?;
+
+    let mut open_orders_account:OpenOrdersAccount = AccountDeserialize::deserialize(&mut &data)?;
+
+    let order_idx = open_orders_account.find_order_by_order_id(order_id)?;
+    let order = open_orders_account.orders[order_idx];
+
+    order.quantity = order.quantity.checked_sub(filled_qty).ok_or(ErrorCode::SubtractionUnderFlow)?;
+    // This is a proportion of the margin that we use
+
+    // We convert the data to u128 while doing operation so that overflow didn't happen.
+    let margin_release = (filled_qty as u128).checked_mul(order.locked_margin as u128).ok_or(ErrorCode::MathError)?.checked_div(order.quantity as u128).ok_or(ErrorCode::MathError)? as u64;
+    order.locked_margin = order.locked_margin.checked_sub(ErrorCode::SubtractionUnderFlow)?;
+
+    if order.quantity == 0 {
+        order.status = crate::OrderStatus::FREE;
+        open_orders_account.client_order_id[order_idx] = 0;
+    }
+
+    open_orders_account.try_serialize(&mut order)?;
+    Ok(())
 }
 
 fn process_position_update(
@@ -160,9 +262,7 @@ fn process_position_update(
     if data.len() < 8 {
         return Err(error!(ErrorCode::MathError)?);
     }
-    // skipping the 8-byte discriminator 
-    let mut slice = &data[8..];
-    let mut position:UserPosition = AnchorDeserialize::deserialize(&mut slice);
+    let mut position:UserPosition = AccountDeserialize::try_deserialize(&mut &data)?;
 
     let qty_i64 = qty as i64;
     let cost = (qty_i64.checked_mul(price as i64)).ok_or(ErrorCode::MathError)?;

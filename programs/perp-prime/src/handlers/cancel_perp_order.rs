@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{CircularQueue, Market, OpenOrdersAccount, Order, OrderStatus, RequestItem, RequestType, UserAccount};
+use crate::{CircularQueue, Market, OpenOrdersAccount, Order, OrderStatus, RequestItem, RequestType, UserAccount,error::ErrorCode};
 
 #[derive(Accounts)]
 pub struct CancelOrder<'info>{
@@ -57,10 +57,11 @@ pub fn cancel_order(ctx:Context<CancelOrder>,client_order_id:u64)->Result<()>{
     // Finding the order by its Client ID - O(n)
     let order_index = open_orders_account.find_order_by_client_id(client_order_id)?;
 
-    let order_to_cancel = &mut open_orders_account.orders[order_index];
+    let order_to_cancel = & open_orders_account.orders[order_index];
+
+    require!(order_to_cancel.status == OrderStatus::OPEN || order_to_cancel.status == OrderStatus::PENDING, ErrorCode::OrderAlreadyProcessed);
 
     let order_id = order_to_cancel.order_id;
-    order_to_cancel.status = OrderStatus::CANCELLED;
 
     let request_item = RequestItem {
         order_id: order_id,
@@ -72,9 +73,6 @@ pub fn cancel_order(ctx:Context<CancelOrder>,client_order_id:u64)->Result<()>{
         user: ctx.accounts.user.key(),
         padding0: [0;4],
     };
-
-    // clear the client_id from the lookup table
-    open_orders_account.client_order_ids[order_index] = 0;
 
     let mut request_queue_data = ctx.accounts.request_queue.try_borrow_mut_data()?;
     CircularQueue::push(&mut request_queue_data, request_item)?;

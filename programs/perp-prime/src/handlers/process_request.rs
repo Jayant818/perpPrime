@@ -205,6 +205,7 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 }
 
 
+// TODO: Market order are IOC, so it doesn't actually mean to store them in the tree, reject the order for the remaining quantity.
 fn handle_place_order(
     request_item:&RequestItem,
     open_orders_account: &mut Account<OpenOrdersAccount>,
@@ -384,6 +385,7 @@ fn handle_cancel_order(
     let order_index = open_orders_account.find_order_by_order_id(request.order_id)?;
     let order = &mut open_orders_account.orders[order_index];
 
+    // what about PENDING order here , if the order is pending means it is in the request queue and will be processed before the cancel order , so we never encounter the PENDING state
     if order.status == OrderStatus::FREE || order.status == OrderStatus::FILLED {
         return Ok(())
     }
@@ -400,6 +402,7 @@ fn handle_cancel_order(
         }
     };
 
+    // For the case where order is OPEN, but is filled completely so it is not in the slab Tree.
     match remove_result{
         Ok(node)=>{
             let cancel_event = CancelEventPod::new(
