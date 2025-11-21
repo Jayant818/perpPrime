@@ -40,12 +40,14 @@ fn emit_fill_event(
     Ok(())
 }
 
+
 fn process_fill(
     bids: &mut [u8],
     event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>,
     taker_order: &mut RequestItem,
     max_bid_idx: u64,
     mut max_bid: SlabNode, 
+    market: &mut Account<'info,Market>,
 ) -> Result<()> {
     let filled_qty = if max_bid.quantity > taker_order.quantity {
         taker_order.quantity
@@ -61,6 +63,10 @@ fn process_fill(
     }
 
     taker_order.quantity = taker_order.quantity.checked_sub(filled_qty).ok_or(ErrorCode::MathError)?;
+
+    let price = get_price_from_order_id(max_bid.order_id);
+    market.last_price = price;
+    market.last_funding_time = Clock::get()?.unix_timestamp;
 
     emit_fill_event(
         event_queue,
@@ -98,6 +104,7 @@ pub struct ProcessRequest<'info>{
     pub quote_mint: InterfaceAccount<'info,TokenAccount>,
 
     #[account(
+        mut,
         seeds = [
             b"market",
             base_mint.key().as_ref(),
@@ -179,6 +186,8 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
     let peeked_value = CircularQueue::<RequestItem>::peek(&mut request_queue)?;
 
+    let market = &mut ctx.accounts.market;
+
     let request_item = match peeked_value {
         Some(item)=>item,
         None => return Ok(())
@@ -189,7 +198,7 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
     match request_item.request_type {
         OPEN => {
-            handle_place_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut event_queue)?;
+            handle_place_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut event_queue,&mut market)?;
         },
         CANCEL =>{
             handle_cancel_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut event_queue)?;
@@ -211,7 +220,8 @@ fn handle_place_order(
     open_orders_account: &mut Account<OpenOrdersAccount>,
     bids: &mut [u8],
     asks: &mut [u8],
-    event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>
+    event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>,
+    market: &mut Account<'info,Market>,
 )->Result<()>{
 
     let order_idx = open_orders_account.find_order_by_order_id(order.order_id)?;
@@ -248,7 +258,7 @@ fn handle_place_order(
                             let max_bid_price = Slab::get_price_from_key(max_bid.key);
 
                             // process a single fill between taker_order and max_bid
-                            process_fill(&mut bids, &mut event_queue, &mut taker_order, max_bid_idx, max_bid)?;
+                            process_fill(&mut bids, &mut event_queue, &mut taker_order, max_bid_idx, max_bid,market)?;
 
                             // if taker filled, we break
                             if taker_order.quantity == 0 {
@@ -291,7 +301,7 @@ fn handle_place_order(
                                 break;
                             }else {
                                 // price crosses: execute a match
-                                process_fill(&mut bids, &mut event_queue, &mut taker_order, max_bid_idx, max_bid)?;
+                                process_fill(&mut bids, &mut event_queue, &mut taker_order, max_bid_idx, max_bid,market)?;
 
                                 // if taker filled, break
                                 if taker_order.quantity == 0 {
@@ -325,7 +335,7 @@ fn handle_place_order(
 
                         let (min_ask_idx, min_ask) = Slab::find_min(&asks)?;
                         // process a single fill between taker_order (buy) and min_ask (maker)
-                        process_fill(&mut asks, &mut event_queue, &mut taker_order, min_ask_idx, min_ask)?;
+                        process_fill(&mut asks, &mut event_queue, &mut taker_order, min_ask_idx, min_ask,market)?;
 
                         if taker_order.quantity == 0 { break; }
                     }
@@ -355,7 +365,7 @@ fn handle_place_order(
                             Slab::insert(&mut bids, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
                             break;
                         } else {
-                            process_fill(&mut asks, &mut event_queue, &mut taker_order, min_ask_idx, min_ask)?;
+                            process_fill(&mut asks, &mut event_queue, &mut taker_order, min_ask_idx, min_ask,market)?;
 
                             if taker_order.quantity == 0 { break; }
                         }

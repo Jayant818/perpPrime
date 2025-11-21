@@ -23,6 +23,8 @@ pub struct Market{
     pub base_lot_size: u64,
     pub quote_lot_size: u64,
     pub sequence: u64,
+    pub last_price: u64,
+    pub last_traded_ts: i64,
     pub market_bump : u8,
     pub bids_bump: u8,
     pub asks_bump: u8,
