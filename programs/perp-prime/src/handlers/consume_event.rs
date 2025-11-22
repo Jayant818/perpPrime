@@ -1,7 +1,7 @@
-use anchor_lang::prelude::{pubkey::PubkeyError, *};
+use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::spl_associated_token_account::solana_program::compute_units::sol_remaining_compute_units, token_interface::Mint};
 use bytemuck::{bytes_of, checked::{from_bytes, try_from_bytes}};
-use crate::{OpenOrdersAccount, UserAccount, UserPosition, error::ErrorCode, user};
+use crate::{FUNDING_SCALE, OpenOrdersAccount, UserAccount, UserPosition, error::ErrorCode, user, user_position};
 
 use crate::{CANCEL_EVENT, CancelEventPod, CircularQueue, EventQueue, EventQueueAccount, FILL_EVENT, FillEventPod, Market, error::ErrorCode};
 
@@ -38,6 +38,17 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
 
     let mut event_queue = ctx.accounts.event_queue.load_mut()?;
     let market = &ctx.accounts.market;
+    let clock = Clock::get()?;
+    let current_ts = clock.unix_timestamp;
+
+    // Updating global funding rate, event though no trades have happend , we still bring the global ts to now , so user pay fair.
+    // also the oracle price may change so we don't want the new user to pay.
+    let elapsed_time = current_ts.checked_sub(current_ts).ok_or(ErrorCode::SubtractionUnderFlow)?;
+    if elapsed_time > 0 {
+        let funding_added = market.current_funding_velocity.checked_mul(elapsed_time).ok_or(ErrorCode::MultiplicationError)?;
+        market.cummulative_funding_rate = market.cummulative_funding_rate.checked_add(funding_added).ok_or(ErrorCode::AdditionOverflow)?;
+        market.last_traded_ts = current_ts;
+    }
 
     let limit = std::cmp::min(event_queue.header.count, max_events);
 
@@ -64,6 +75,9 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                 let maker_pk = Pubkey::new_from_array(fill_event.maker);
                 let taker_pk = Pubkey::new_from_array(fill_event.taker);
 
+                process_user_funding_settlement(&ctx.remaining_accounts, &market, maker_pk)?;
+                process_user_funding_settlement(&ctx.remaining_accounts, &market, taker_pk)?;
+
                 // Updating maker Position - Liquidity Provider
                 process_position_update(
                     &ctx.remaining_accounts, 
@@ -88,7 +102,7 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                     &ctx.remaining_accounts, 
                     &market.key(), 
                     maker_pk, 
-                    fill_event.order_id, 
+                    fill_event.maker_order_id, 
                     fill_event.quantity,
                 )?; 
 
@@ -97,7 +111,7 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                     &ctx.remaining_accounts, 
                     &market.key(), 
                 taker_pk, 
-                    fill_event.order_id, 
+                    fill_event.taker_order_id, 
                     fill_event.quantity
                 )?;               
 
@@ -157,7 +171,6 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                 order.locked_margin = 0;
                 order.quantity = 0;
                 open_orders_account.client_order_ids[order_idx] = 0;
-
 
                 let mut writer = &mut data[..];
                 open_orders_account.try_serialize(&mut writer);
@@ -279,6 +292,49 @@ fn process_position_update(
     // serialize back the data 
     let mut writer = &mut data[8..];
     position.try_serialize(&mut writer)?;
+
+    Ok(())
+}
+
+pub fn process_user_funding_settlement(
+    remaining_accounts: &[AccountInfo],
+    market: &Account<'info,Market>,
+    user_pk: Pubkey
+)->Result<()>{
+
+    let (expected_pda,_) = Pubkey::find_program_address(&[
+        b"user_position",
+        user_pk.as_ref(),
+        market.key().as_ref(),
+    ], &crate::ID);
+
+    let user_account= remaining_accounts.iter().find(|acc| acc.key() == expected_pda)?;
+    
+    let user_account_data = user_account.try_borrow_mut_data()?;
+
+    let user_position : UserPosition = AccountDeserialize::try_deserialize(&mut &user_account_data)?;
+
+    let user_cum = user_position.last_cumulative_funding_rate;
+    let global_cummulative_funding_rate = market.cummulative_funding_rate;
+
+    let diff = global_cummulative_funding_rate - user_cum;
+
+    // if Qty > 0 (Long) and diff > 0 (+ve) : User Pays
+    // If Qty < 0 (Short) and diff > 0 (+ve) : User receives
+    // getting payment = Position_size * diff
+    let funding_payment_scaled = diff.checked_mul(user_position.quantity).ok_or(ErrorCode::MultiplicationError)?;
+    let funding_payment = funding_payment_scaled / FUNDING_SCALE;
+
+    // +ve
+    if funding_payment > 0 {
+        user_position.collateral = user_position.collateral.checked_sub(funding_payment).ok_or(ErrorCode::InsufficientCollateral)?;
+    }else{
+        user_position.collateral = user_position.collateral.checked_add(funding_payment).ok_or(ErrorCode::AdditionOverflow)?;
+    }
+
+    user_position.last_cumulative_funding_rate = user_cum;
+
+    user_position.try_serialize(&mut user_account_data)?;
 
     Ok(())
 }

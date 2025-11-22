@@ -10,12 +10,14 @@ pub struct Market{
     #[max_len(15)]
     pub pair: String,
     pub oracle_price_feed: Pubkey,
+    // Funding State
     pub funding_rate : i64, // currrent funding rate - scaled by 1e6
     pub funding_clamp:i64, // scaled 1e6
     pub last_funding_time:u128,
     pub funding_interval:u8,
-    pub open_interest: u128, 
     pub cummulative_funding_rate : i128,
+    pub current_funding_velocity: i128,
+    pub open_interest: u128, 
     pub initial_margin_rate: u64,
     pub maintainence_margin: u64,
     pub base_mint: Pubkey,

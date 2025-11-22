@@ -10,4 +10,4 @@ pub const PROGRAM_ID: &str = "Ec4ShFEJA2vRScZfsYtihn96vuiVYcGmN7xb1HqKAUke";
 pub const PRICE_SCALE:i128 = 1_000_000_000; // for oracles
 
 #[constant]
-pub const FUNDING_SCALE:i128 = 1_000_000;
+pub const FUNDING_SCALE:i128 = 1_000_000_000;

@@ -82,6 +82,9 @@ pub enum ErrorCode {
 
     #[msg("Invalid Event Type")]
     InvalidEventType,
+
+    #[msg("Multiplication Error")]
+    MultiplicationError,
 }   
 
 

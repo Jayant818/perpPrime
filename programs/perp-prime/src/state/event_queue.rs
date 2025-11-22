@@ -5,7 +5,7 @@ use bytemuck::{Pod, Zeroable};
 
 use crate::{QueueHeader, EventQueueEntry};
 
-pub const EVENT_SIZE: usize = 112;
+pub const EVENT_SIZE: usize = 128;
 
 /// reserved size after tag = EVENT_SIZE - 1 = 111
 pub const ANY_RESERVED_A: usize = 64;
@@ -25,7 +25,7 @@ pub struct AnyEvent {
     // pub reserved_a: [u8; ANY_RESERVED_A],
     // pub reserved_b: [u8; ANY_RESERVED_B],
     // pub reserved_c: [u8; ANY_RESERVED_C],
-    pub data :[u8;104],
+    pub data :[u8;120],
 }
 const _: () = assert!(std::mem::size_of::<AnyEvent>() == EVENT_SIZE);
 
@@ -36,7 +36,8 @@ pub struct FillEventPod {
     pub _padding1: [u8; 7], // 7  
     pub taker: [u8; 32], // 32
     pub maker: [u8; 32], // 32
-    pub order_id: [u64;2], // 16
+    pub maker_order_id: [u64;2], // 16
+    pub taker_order_id: [u64;2], // 16
     pub price: u64, // 8
     pub quantity: u64, // 8 
     pub taker_side: u8,     // 0 = Bid, 1 = Ask
@@ -47,7 +48,8 @@ const _: () = assert!(std::mem::size_of::<FillEventPod>() == EVENT_SIZE);
 impl FillEventPod {
     pub fn new(
         maker: [u8; 32], 
-        order_id: u128, 
+        maker_order_id: u128, 
+        taker_order_id:u128,
         price: u64, 
         quantity: u64, 
         taker: [u8; 32], 
@@ -59,7 +61,8 @@ impl FillEventPod {
             taker, 
             maker, 
             // convert u128 to [u64;2]
-            order_id: bytemuck::cast(order_id), 
+            maker_order_id: bytemuck::cast(maker_order_id), 
+            taker_order_id: bytemuck::cast(taker_order_id),
             price, 
             quantity, 
             taker_side, 
@@ -77,7 +80,7 @@ pub struct CancelEventPod {
     pub order_id: [u64;2],
     pub owner: [u8; 32],
     pub quantity: u64,
-    pub _padding2: [u8;48], 
+    pub _padding2: [u8;64], 
 }
 const _: () = assert!(std::mem::size_of::<CancelEventPod>() == EVENT_SIZE);
 
@@ -93,7 +96,7 @@ impl CancelEventPod {
             order_id: bytemuck::cast(order_id), 
             owner, 
             quantity, 
-            _padding2: [0;48] 
+            _padding2: [0;64] 
         }
     }
 }

@@ -1,13 +1,16 @@
+use core::time;
+
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::TokenAccount;
 use bytemuck::{bytes_of, checked::cast};
 
-use crate::{AnyEvent, CancelEventPod, CircularQueue, EventQueueAccount, EventQueueEntry, FillEventPod, GlobalConfig, Market, OpenOrdersAccount, OrderSide, OrderStatus, RequestItem, RequestQueueAccount, Slab, SlabNode, array_to_pubkey, error::ErrorCode, pubkey_to_array};
+use crate::{AnyEvent, CancelEventPod, CircularQueue, EventQueueAccount, EventQueueEntry, FUNDING_SCALE, FillEventPod, GlobalConfig, Market, OpenOrdersAccount, OrderSide, OrderStatus, RequestItem, RequestQueueAccount, Slab, SlabNode, array_to_pubkey, error::ErrorCode, pubkey_to_array};
 
 fn emit_fill_event(
     event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>,
     maker: Pubkey,
     maker_order_id: u128,
+    taker_order_id: u128,
     price: u64,
     quantity: u64,
     taker: Pubkey,
@@ -16,15 +19,15 @@ fn emit_fill_event(
     let maker_bytes = pubkey_to_array(maker);
     let taker_bytes = pubkey_to_array(taker);
 
-    let fill = FillEventPod::new(
-        pubkey_to_array(maker),
-        maker_order_id,
-        price,
-        quantity,
-        pubkey_to_array(taker),
+   let fill = FillEventPod::new(
+        maker, 
+        maker_order_id, 
+        taker_order_id, 
+        price, 
+        quantity, 
+        taker, 
         taker_side
     );
-
     // let fill_bytes = bytes_of(&fill);
     // let mut raw = [0u8;112];
     // raw[..fill_bytes.len()].copy_from_slice(fill_bytes);
@@ -71,7 +74,8 @@ fn process_fill(
     emit_fill_event(
         event_queue,
         array_to_pubkey(max_bid.owner),           
-        max_bid.order_id,        
+        max_bid.order_id,
+        taker_order.order_id,        
         Slab::get_price_from_key(max_bid.key),
         filled_qty,
         taker_order.user,
@@ -196,6 +200,18 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
     // Check : cranker provided open order account owner should match request Item Owner
     require_keys_eq!(taker_order.user, open_orders_account.owner, ErrorCode::InvalidOwner);
 
+    let clock = Clock::get()?;
+    let current_ts = clock.unix_timestamp;
+
+    let time_elapsed = current_ts.checked_sub(market.last_funding_time).ok_or(ErrorCode::SubtractionUnderFlow)?;
+
+    if time_elapsed > 0 {
+        let funding_added = market.current_funding_velocity.checked_mul(time_elapsed).ok_or(ErrorCode::MathError)?;
+        market.cummulative_funding_rate = market.cummulative_funding_rate.checked_add(funding_added).ok_or(ErrorCode::AdditionOverflow)?;
+
+        market.last_traded_ts = current_ts;
+    }
+
     match request_item.request_type {
         OPEN => {
             handle_place_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut event_queue,&mut market)?;
@@ -207,10 +223,24 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
     request_queue.pop()?;
 
+    // setting the future 
+    // TODO: Fetch real oracle price from account 
+    let oracle_price = 150_000_000;
+    let mark_price = market.last_price;
 
-    // we also need to find the price of the order that we poped from the request_queue, we have to order id , so we need to specify the order PDA
+    let mark_i128 = mark_price as i128;
+    let oracle_i128: i128 = oracle_price as i128;
+    let premium = mark_price.checked_sub(oracle_i128).ok_or(ErrorCode::SubtractionUnderFlow)?;
 
-     Ok(())
+    let clamp = market.funding_clamp as i128;
+    let clamped_premium = premium.clamp(-clamp, clamp);
+
+    let new_velocity = clamped_premium.checked_mul(FUNDING_SCALE).ok_or(ErrorCode::MathError)?.checked_div(86400).ok_or(ErrorCode::MathError)?;
+
+    market.current_funding_velocity = new_velocity;
+    market.funding_rate = clamped_premium as i64;
+
+    Ok(())
 }
 
 
