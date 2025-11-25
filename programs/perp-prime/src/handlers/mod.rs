@@ -6,6 +6,7 @@ pub mod process_request;
 pub mod cancel_perp_order;
 pub mod create_open_orders;
 pub mod consume_event;
+pub mod liquidate_position;
 
 pub use initialize::*;
 pub use deposit_collateral::*;
@@ -15,3 +16,4 @@ pub use process_request::*;
 pub use cancel_perp_order::*;
 pub use create_open_orders::*;
 pub use consume_event::*;
+pub use liquidate_position::*;

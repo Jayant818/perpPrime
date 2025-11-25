@@ -6,6 +6,7 @@ pub struct InitializeUserPosition<'info>{
     #[account(mut)]
     pub payer: Signer<'info>,
 
+    // TODO: Is it a good approach or should we use the user global account instead?
     #[account(
         init,
         seeds = [

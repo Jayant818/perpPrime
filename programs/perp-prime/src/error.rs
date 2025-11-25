@@ -85,6 +85,9 @@ pub enum ErrorCode {
 
     #[msg("Multiplication Error")]
     MultiplicationError,
+
+    #[msg("Position is already Liquidating")]
+    PositionIsAlreadyLiquidating,
 }   
 
 

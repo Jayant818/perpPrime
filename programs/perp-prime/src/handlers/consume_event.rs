@@ -322,6 +322,7 @@ pub fn process_user_funding_settlement(
     // if Qty > 0 (Long) and diff > 0 (+ve) : User Pays
     // If Qty < 0 (Short) and diff > 0 (+ve) : User receives
     // getting payment = Position_size * diff
+    // for the new user the funding rate will be 0, as the quantity is 0 
     let funding_payment_scaled = diff.checked_mul(user_position.quantity).ok_or(ErrorCode::MultiplicationError)?;
     let funding_payment = funding_payment_scaled / FUNDING_SCALE;
 

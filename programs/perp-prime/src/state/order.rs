@@ -20,6 +20,7 @@ pub struct Order{
     pub order_id :u128,
     // Order Id provided by the client for easier lookup,
     pub client_order_id:u64,
+    pub is_liquidating:bool,
     pub side: OrderSide,
     pub order_type: OrderType,
     pub position:OrderPosition,

@@ -2,7 +2,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
 
-use crate::{CircularQueue, EventQueueAccount, EventQueueEntry, GlobalConfig, Market, QueueHeader, RequestItem, RequestQueueAccount, Slab};
+use crate::{CircularQueue, EventQueueAccount, EventQueueEntry, GlobalConfig, MARGIN_SCALE, Market, QueueHeader, RequestItem, RequestQueueAccount, Slab,error::ErrorCode};
 
 #[derive(Accounts)]
 pub struct InitializeMarket<'info>{
@@ -133,8 +133,8 @@ pub fn initialize_market(
     market.quote_lot_size = quote_lot_size;
     market.base_lot_size = base_lot_size;
     market.quote_mint = quote_mint;
-    market.maintainence_margin = maintainence_margin;
-    market.initial_margin_rate = initial_margin_rate;
+    market.maintainence_margin = maintainence_margin.checked_mul(MARGIN_SCALE as u64).ok_or(ErrorCode::MultiplicationError)?;
+    market.initial_margin_rate = initial_margin_rate.checked_mul(MARGIN_SCALE as u64).ok_or(ErrorCode::MultiplicationError)?;
     market.event_queue_bump = ctx.bumps.event_queue;
     market.request_queue_bump = ctx.bumps.request_queue;
     market.market_bump = ctx.bumps.market;

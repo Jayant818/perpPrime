@@ -122,8 +122,9 @@ pub enum OrderPosition{
 #[derive(Clone,Copy,AnchorDeserialize,AnchorSerialize,Default)]
 pub enum RequestType{
     #[default]
-    OPEN,
-    CANCEL
+    OPEN = 0,
+    CANCEL = 1,
+    LIQUIDATION = 2,
 }
 
 #[repr(C)]
@@ -139,4 +140,26 @@ pub struct RequestItem{
     pub order_id: u128,
     // pub padding1: [u8; 0],
     // pub entry_price: u64, - Not suitable for Cancel Order, instead we show the order_id
+}
+
+impl RequestItem {
+    pub fn init(
+    request_type:u8,
+    order_type: u8,
+    order_side :u8, 
+    position: u8,   
+    quantity: u64,
+    user: Pubkey,
+    order_id: u128,
+    )->Self{
+        Self { 
+            request_type, 
+            order_type, 
+            order_side, 
+            position, 
+            padding0:[0;4], 
+            quantity, 
+            user, 
+            order_id }            
+    }
 }

@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 
+// TODO: WHY are not storing the last oracle_price ?
 #[account]
 #[derive(InitSpace)]
 pub struct Market{

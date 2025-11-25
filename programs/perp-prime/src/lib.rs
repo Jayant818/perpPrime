@@ -69,7 +69,18 @@ pub mod perp_prime {
         Ok(())
     }
 
+    pub fn cancel_order(ctx: Context<CancelOrder>, client_order_id: u64) -> Result<()> {
+        handlers::cancel_order(ctx, client_order_id)
+    }
 
+    pub fn process_request(ctx: Context<ProcessRequest>, pair: String) -> Result<()> {
+        handlers::process_request(ctx, pair)
+    }
+
+    // 3. Expose Settlement Engine (Crank 2)
+    pub fn consume_events(ctx: Context<ConsumeEvents>, max_events: u64) -> Result<()> {
+        handlers::consume_event(ctx, max_events)
+    }
 
 
 }
