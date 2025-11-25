@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::Mint;
+use anchor_spl::token_interface::Mint;
 
-use crate::{MARGIN_SCALE, Market, RequestItem, RequestQueueAccount, RequestType, UserAccount, UserPosition, error::ErrorCode, user};
+use crate::{MARGIN_SCALE, Market, OpenOrdersAccount, Order, OrderPosition, RequestItem, RequestQueueAccount, RequestType, UserAccount, UserPosition, error::ErrorCode, user};
 
 #[derive(Accounts)]
 pub struct LiquidatePosition<'info>{
@@ -25,12 +25,22 @@ pub struct LiquidatePosition<'info>{
         mut,
         seeds = [
             b"user_position",
-            payer.key().as_ref(),
+            user.key().as_ref(),
             market.key().as_ref()
         ],
         bump = user_position.bump,
     )]
     pub user_position: Account<'info,UserPosition>,
+
+    #[account(
+        seeds = [
+            b"open_orders",
+            owner.key().as_ref(),
+            market.key().as_ref()
+        ],
+        bump = open_orders_account.bump,
+    )]
+    pub open_order_account:Account<'info,OpenOrdersAccount>,
 
     #[account(
         seeds = [
@@ -61,6 +71,11 @@ pub struct LiquidatePosition<'info>{
         address = market.quote_mint
     )]
     pub quote_mint: InterfaceAccount<'info,Mint>,
+
+    #[account(
+        constraint = price_feed.key() == market.oracle_price_feed.key() @ErrorCode::InvalidPriceFeedId,
+    )]
+    pub price_feed: UncheckedAccount<'info>,
 }
 
 pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
@@ -74,6 +89,7 @@ pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
     require!(!user_position.is_liquidating, ErrorCode::PositionIsAlreadyLiquidating);
 
     let mut request_queue = ctx.accounts.request_queue.load_mut()?;
+    let mut open_order_account = &mut ctx.accounts.open_order_account;
 
     // Computing Notional
     // using wider type for match to avoid overflow error
@@ -103,12 +119,39 @@ pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
             0
         };
 
+        let position = if order_side == 1 {
+            // order is on ASK side so the person is doing short 
+            OrderPosition::SHORT
+        }else{
+            OrderPosition::LONG
+        };
+
+        // price when equity become 0 
+        let limit_price = oracle_price_i128 - equity;
+
         let quantity_to_lose = user_position.quantity.unsigned_abs();
         let user_key = ctx.accounts.user.key();
         let position_key = ctx.accounts.user_position.key();
-        let order_id = 0;
 
-        let requestItem = RequestItem::init(
+        market.sequence = market.sequence.checked_add(1).ok_or(ErrorCode::AdditionOverflow)?;
+        let order_id = (limit_price as u128) << 64 | market.sequence as u128;
+
+        let order = Order::new(
+            crate::OrderStatus::PENDING, 
+            quantity_to_lose, 
+            order_id, 
+            0, 
+            true, 
+            order_side, 
+            crate::OrderType::LimitOrder, 
+            position,
+            // I think in this case as perp order is placed so locked margin will be 0 
+            0, 
+            limit_price
+        );
+        
+
+        let request_item = RequestItem::init(
             RequestType::LIQUIDATION, 
             1,//Limit Order 
             order_side, 
@@ -118,7 +161,7 @@ pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
             order_id
         );
 
-        request_queue.push(&requestItem)?;
+        request_queue.push(&request_item)?;
 
     }
 

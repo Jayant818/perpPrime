@@ -27,3 +27,32 @@ pub struct Order{
     pub locked_margin: u64,
     pub limit_price:u64,
 }
+
+
+impl Order {
+    pub fn new(
+        status: OrderStatus,
+        quantity: u64,
+        order_id :u128,
+        client_order_id:u64,
+        is_liquidating:bool,
+        side: OrderSide,
+        order_type: OrderType,
+        position:OrderPosition,
+        locked_margin: u64,
+        limit_price:u64,
+    )->Self{
+        Self { 
+            status, 
+            quantity, 
+            order_id, 
+            client_order_id, 
+            is_liquidating, 
+            side, 
+            order_type, 
+            position, 
+            locked_margin, 
+            limit_price 
+        }
+    }
+}

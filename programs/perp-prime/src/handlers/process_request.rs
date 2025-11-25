@@ -176,7 +176,8 @@ const ASK: u8 = 1;
 const MARKET_ORDER:u8 = 0;
 const LIMIT_ORDER:u8 = 1;
 const OPEN : u8 = 0;
-const CANCEL : u8 = 0;
+const CANCEL : u8 = 1;
+const LIQUIDATION :u8 = 2;
 
 pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
@@ -218,6 +219,9 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
         },
         CANCEL =>{
             handle_cancel_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut event_queue)?;
+        },
+        LIQUIDATION =>{
+            handle_place_order(&request_item, open_orders_account, bids, asks, &mut event_queue, market)
         }
     }
 

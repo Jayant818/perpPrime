@@ -107,6 +107,7 @@ pub fn place_perp_order(
         limit_price:limit_price_in_lots,
         order_type,
         locked_margin: margin,
+        is_liquidating:false,
     };
     
     open_orders_account.client_order_ids[free_slot_index] = client_order_id;

@@ -88,6 +88,9 @@ pub enum ErrorCode {
 
     #[msg("Position is already Liquidating")]
     PositionIsAlreadyLiquidating,
+
+    #[msg("Invalid Price Feed ID")]
+    InvalidPriceFeedId,
 }   
 
 
