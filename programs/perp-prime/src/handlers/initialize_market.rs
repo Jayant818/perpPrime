@@ -2,7 +2,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token::Mint;
 
-use crate::{CircularQueue, EventQueueAccount, EventQueueEntry, GlobalConfig, MARGIN_SCALE, Market, QueueHeader, RequestItem, RequestQueueAccount, Slab,error::ErrorCode};
+use crate::{ EventQueueAccount, EventQueueEntry, GlobalConfig, MARGIN_SCALE, Market, QueueHeader, RequestItem, RequestQueueAccount, Slab,error::ErrorCode};
 
 #[derive(Accounts)]
 pub struct InitializeMarket<'info>{

@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::TokenAccount;
 use bytemuck::{bytes_of, checked::cast};
 
-use crate::{AnyEvent, CancelEventPod, CircularQueue, EventQueueAccount, EventQueueEntry, FUNDING_SCALE, FillEventPod, GlobalConfig, Market, OpenOrdersAccount, OrderSide, OrderStatus, RequestItem, RequestQueueAccount, RequestType, Slab, SlabNode, array_to_pubkey, error::ErrorCode, pubkey_to_array};
+use crate::{AnyEvent, CancelEventPod, EventQueueAccount, EventQueueEntry, FUNDING_SCALE, FillEventPod, GlobalConfig, Market, OpenOrdersAccount, OrderSide, OrderStatus, RequestItem, RequestQueueAccount, RequestType, Slab, SlabNode, array_to_pubkey, error::ErrorCode, pubkey_to_array};
 
 fn emit_fill_event(
     event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>,
@@ -189,16 +189,15 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
     let open_orders_account = &mut ctx.accounts.open_orders_account;
 
-    let peeked_value = CircularQueue::<RequestItem>::peek(&mut request_queue)?;
+    let peeked_value = request_queue.peek()?;
 
     let market = &mut ctx.accounts.market;
 
-    let request_item = match peeked_value {
+    let taker_order = match peeked_value {
         Some(item)=>item,
         None => return Ok(())
     };
 
-    // Check : cranker provided open order account owner should match request Item Owner
     require_keys_eq!(taker_order.user, open_orders_account.owner, ErrorCode::InvalidOwner);
 
     let clock = Clock::get()?;
@@ -213,15 +212,15 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
         market.last_traded_ts = current_ts;
     }
 
-    match request_item.request_type {
+    match taker_order.request_type {
         OPEN => {
-            handle_place_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut event_queue,&mut market)?;
+            handle_place_order(&taker_order, open_orders_account, &mut *bids, &mut *asks, &mut event_queue,&mut market)?;
         },
         CANCEL =>{
-            handle_cancel_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut event_queue)?;
+            handle_cancel_order(&taker_order, open_orders_account, &mut *bids, &mut *asks, &mut event_queue)?;
         },
         LIQUIDATION =>{
-            handle_place_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut event_queue, &mut market)?;
+            handle_place_order(&taker_order, open_orders_account, &mut *bids, &mut *asks, &mut event_queue, &mut market)?;
         }
     }
 

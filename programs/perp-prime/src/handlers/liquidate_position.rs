@@ -35,6 +35,7 @@ pub struct LiquidatePosition<'info>{
     pub user_position: Account<'info,UserPosition>,
 
     #[account(
+        mut,
         seeds = [
             b"open_orders",
             owner.key().as_ref(),
@@ -97,7 +98,7 @@ pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
     let quantity_i128 = user_position.quantity as i128;
     let oracle_price_i128 = oracle_price as i128;
 
-    let abs_qty = if qty >= 0 {quantity_i128} else {-quantity_i128};
+    let abs_qty = quantity_i128.abs();
     // We can take weighted average or somehow as we can't liquidate the user if the market is manipulated
     let notional_i128: i128  = abs_qty * oracle_price_i128; 
 

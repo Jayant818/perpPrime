@@ -3,7 +3,7 @@ use anchor_spl::{associated_token::spl_associated_token_account::solana_program:
 use bytemuck::{bytes_of, checked::{from_bytes, try_from_bytes}};
 use crate::{FUNDING_SCALE, OpenOrdersAccount, PositionStatus, UserAccount, UserPosition, error::ErrorCode, user, user_position};
 
-use crate::{CANCEL_EVENT, CancelEventPod, CircularQueue, EventQueue, EventQueueAccount, FILL_EVENT, FillEventPod, Market, error::ErrorCode};
+use crate::{CANCEL_EVENT, CancelEventPod, EventQueue, EventQueueAccount, FILL_EVENT, FillEventPod, Market, error::ErrorCode};
 
 #[derive(Accounts)]
 pub struct ConsumeEvents<'info>{
@@ -384,7 +384,7 @@ pub fn process_user_funding_settlement(
         user_position.collateral = user_position.collateral.checked_add(funding_payment).ok_or(ErrorCode::AdditionOverflow)?;
     }
 
-    user_position.last_cumulative_funding_rate = user_cum;
+    user_position.last_cumulative_funding_rate = global_cummulative_funding_rate;
 
     user_position.try_serialize(&mut user_account_data)?;
 

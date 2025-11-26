@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::{CircularQueue, Market, OpenOrdersAccount, Order, OrderStatus, RequestItem, RequestType, UserAccount,error::ErrorCode};
+use crate::{ Market, OpenOrdersAccount, Order, OrderStatus, RequestItem, RequestQueueAccount, RequestType, UserAccount, error::ErrorCode};
 
 #[derive(Accounts)]
 pub struct CancelOrder<'info>{
@@ -21,13 +21,11 @@ pub struct CancelOrder<'info>{
         mut,
         seeds = [
             b"request_queue",
-            market.base_mint.as_ref(),
-            market.quote_mint.as_ref(),
+            market.key().as_ref(),
         ],
         bump = market.request_queue_bump,
     )]
-    /// CHECK:
-    pub request_queue: UncheckedAccount<'info>,
+    pub request_queue: AccountLoader<'info,RequestQueueAccount>,
 
     #[account(
         seeds = [
@@ -74,8 +72,8 @@ pub fn cancel_order(ctx:Context<CancelOrder>,client_order_id:u64)->Result<()>{
         padding0: [0;4],
     };
 
-    let mut request_queue_data = ctx.accounts.request_queue.try_borrow_mut_data()?;
-    CircularQueue::push(&mut request_queue_data, request_item)?;
+    let mut request_queue = ctx.accounts.request_queue.load_mut()?;
+    request_queue.push(&request_item)?;
 
     Ok(())
 }

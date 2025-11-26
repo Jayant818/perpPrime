@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use crate::{
-    CircularQueue, GlobalConfig, Market, OpenOrdersAccount, Order, OrderPosition, OrderSide, OrderStatus, OrderType, PositionStatus, RequestItem, UserAccount, UserPosition, error::ErrorCode, user, user_position
+    GlobalConfig, Market, OpenOrdersAccount, Order, OrderPosition, OrderSide, OrderStatus, OrderType, PositionStatus, RequestItem, RequestQueueAccount, UserAccount, UserPosition, error::ErrorCode, user, user_position
 };
 
 #[derive(Accounts)]
@@ -58,12 +58,11 @@ pub struct PlacePerpOrder<'info> {
         mut,
         seeds = [
             b"request_queue",
-            market.base_mint.as_ref(),
-            market.quote_mint.as_ref(),
+            market.key().as_ref(),
         ],
         bump = market.request_queue_bump,
     )]
-    pub request_queue: UncheckedAccount<'info>,
+    pub request_queue: AccountLoader<'info,RequestQueueAccount>,
 
     pub system_program: Program<'info, System>,
 }
@@ -137,8 +136,8 @@ pub fn place_perp_order(
         order_id,
     };
 
-    let mut request_queue_data = ctx.accounts.request_queue.try_borrow_mut_data()?;
-    CircularQueue::push(&mut request_queue_data, &request_item)?;
+    let mut request_queue_data = ctx.accounts.request_queue.load_mut()?;
+    request_queue_data.push(&request_item)?;
 
     Ok(())
 }
