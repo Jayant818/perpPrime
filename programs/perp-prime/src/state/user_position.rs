@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-#[derive(AnchorSerialize,AnchorDeSerialize,PartialEq)]
+#[derive(AnchorSerialize,AnchorDeserialize,PartialEq,Clone,InitSpace)]
 pub enum PositionStatus{
     Active = 0,
     Liquidating = 1,

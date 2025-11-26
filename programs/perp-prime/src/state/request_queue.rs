@@ -103,7 +103,7 @@ pub enum OrderType{
 }
 
 #[repr(C)]
-#[derive(Clone,Copy,Debug,AnchorDeserialize,AnchorSerialize,Default,InitSpace)]
+#[derive(Clone,Copy,Debug,AnchorDeserialize,AnchorSerialize,Default,InitSpace,PartialEq)]
 pub enum OrderSide{
     #[default]
     BID = 0,
@@ -130,7 +130,7 @@ pub enum RequestType{
 #[repr(C)]
 #[derive(Clone, Copy, Debug,Pod, Zeroable)]
 pub struct RequestItem{
-    pub request_type:u8, // 0 = OPEN , 1 = CANCEL
+    pub request_type:u8, // 0 = OPEN , 1 = CANCEL , 2 = LIQUIDATING
     pub order_type: u8,  // 0 = Market Order, 1 = limit Order
     pub order_side :u8, // 0 = Bid, 1 = Ask
     pub position: u8,   // 0 = SHORT , 1 = LONG

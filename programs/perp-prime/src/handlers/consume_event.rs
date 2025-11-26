@@ -1,9 +1,8 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::spl_associated_token_account::solana_program::compute_units::sol_remaining_compute_units, token_interface::Mint};
-use bytemuck::{bytes_of, checked::{from_bytes, try_from_bytes}};
-use crate::{FUNDING_SCALE, OpenOrdersAccount, PositionStatus, UserAccount, UserPosition, error::ErrorCode, user, user_position};
-
-use crate::{CANCEL_EVENT, CancelEventPod, EventQueue, EventQueueAccount, FILL_EVENT, FillEventPod, Market, error::ErrorCode};
+use bytemuck::{bytes_of, checked::try_from_bytes};
+use crate::{FUNDING_SCALE, OpenOrdersAccount, PositionStatus, UserAccount, UserPosition, error::ErrorCode};
+use crate::{CANCEL_EVENT, CancelEventPod, EventQueueAccount, FILL_EVENT, FillEventPod, Market};
 
 #[derive(Accounts)]
 pub struct ConsumeEvents<'info>{
@@ -11,6 +10,7 @@ pub struct ConsumeEvents<'info>{
     pub cranker: Signer<'info>,
 
     #[account(
+        mut,
         seeds = [
             b"market",
             base_mint.key().as_ref(),
@@ -36,8 +36,8 @@ pub struct ConsumeEvents<'info>{
 
 pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
 
-    let mut event_queue = ctx.accounts.event_queue.load_mut()?;
-    let market = &ctx.accounts.market;
+    let event_queue = ctx.accounts.event_queue.load_mut()?;
+    let market = &mut ctx.accounts.market;
     let clock = Clock::get()?;
     let current_ts = clock.unix_timestamp;
 
@@ -45,7 +45,7 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
     // also the oracle price may change so we don't want the new user to pay.
     let elapsed_time = current_ts.checked_sub(market.last_traded_ts).unwrap_or(0);
     if elapsed_time > 0 {
-        let funding_added = market.current_funding_velocity.checked_mul(elapsed_time).ok_or(ErrorCode::MultiplicationError)?;
+        let funding_added = market.current_funding_velocity.checked_mul(elapsed_time as i128).ok_or(ErrorCode::MultiplicationError)?;
         market.cummulative_funding_rate = market.cummulative_funding_rate.checked_add(funding_added).ok_or(ErrorCode::AdditionOverflow)?;
         market.last_traded_ts = current_ts;
     }
@@ -75,8 +75,8 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                 let maker_pk = Pubkey::new_from_array(fill_event.maker);
                 let taker_pk = Pubkey::new_from_array(fill_event.taker);
 
-                process_user_funding_settlement(&ctx.remaining_accounts, &market, maker_pk)?;
-                process_user_funding_settlement(&ctx.remaining_accounts, &market, taker_pk)?;
+                process_user_funding_settlement(&ctx.remaining_accounts, market, &market.key(), maker_pk)?;
+                process_user_funding_settlement(&ctx.remaining_accounts, market, &market.key(), taker_pk)?;
 
                 // Updating maker Position - Liquidity Provider
                 process_position_update(
@@ -98,21 +98,25 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                     fill_event.taker_side == 1, // if taker side is ask , then taker is selling and maker is buying,
                 )?;
 
+                // Convert [u64; 2] to u128
+                let maker_order_id = (fill_event.maker_order_id[0] as u128) | ((fill_event.maker_order_id[1] as u128) << 64);
+                let taker_order_id = (fill_event.taker_order_id[0] as u128) | ((fill_event.taker_order_id[1] as u128) << 64);
+
                 // Reducing the locked margin & quantity from the OpenOrdersAccount
                 process_order_fill(
                     &ctx.remaining_accounts, 
-                    &market.key(), 
+                    market.key(), 
                     maker_pk, 
-                    fill_event.maker_order_id, 
+                    maker_order_id, 
                     fill_event.quantity,
                 )?; 
 
                 // We have only one order Id stored so that's a problem we have to store the ID of other party also.
                 process_order_fill(
                     &ctx.remaining_accounts, 
-                    &market.key(), 
-                taker_pk, 
-                    fill_event.taker_order_id, 
+                    market.key(), 
+                    taker_pk, 
+                    taker_order_id, 
                     fill_event.quantity
                 )?;               
 
@@ -129,15 +133,15 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                     &[
                         b"open_orders",
                         market.key().as_ref(),
-                        user_pk.key().as_ref()
+                        user_pk.as_ref()
                     ], 
                     &crate::ID
                 );
 
-                let open_orders_account = match ctx.remaining_accounts.iter().find(|acc| acc.key() == expected_open_orders_account){
+                let open_orders_account_info = match ctx.remaining_accounts.iter().find(|acc| acc.key() == expected_open_orders_account){
                     Some(data)=>data,
                     None => {
-                        msg!("Warning: OpenOrders Account not provided for {}", owner_pk);
+                        msg!("Warning: OpenOrders Account not provided for {}", user_pk);
                         return Ok(())
                     }
                 };
@@ -146,7 +150,7 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                 let (expected_user_account,_) = Pubkey::find_program_address(
                     &[
                     b"user_account",
-                    user_pk.key().as_ref()
+                    user_pk.as_ref()
                     ], 
                     &crate::ID
                 );
@@ -154,16 +158,20 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                 let user_account_info = match ctx.remaining_accounts.iter().find(|acc| acc.key() == expected_user_account){
                     Some(user)=> user,
                     None => {
-                        msg!("Warning: User Account not provided for {}", owner_pk);
+                        msg!("Warning: User Account not provided for {}", user_pk);
                         return Ok(())
                     }
                 };
 
-                let mut data = open_orders_account.try_borrow_mut_data()?;
+                let mut data = open_orders_account_info.try_borrow_mut_data()?;
 
-                let mut open_orders_account:OpenOrdersAccount = AnchorDeserialize::deserialize(&mut data)?;
+                let mut open_orders_account:OpenOrdersAccount = AnchorDeserialize::deserialize(&mut &data[..])?;
 
-                let order_idx = open_orders_account.find_order_by_order_id(cancel_event.order_id)?;
+                // Convert [u64; 2] to u128
+                let order_id = (cancel_event.order_id[0] as u128) | ((cancel_event.order_id[1] as u128) << 64);
+                let order_idx = open_orders_account.find_order_by_order_id(order_id)?;
+
+                let locked_margin = open_orders_account.orders[order_idx].locked_margin;
 
                 let order = &mut open_orders_account.orders[order_idx];
 
@@ -174,29 +182,27 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                 open_orders_account.client_order_ids[order_idx] = 0;
 
                 let mut writer = &mut data[..];
-                open_orders_account.try_serialize(&mut writer);
+                open_orders_account.try_serialize(&mut writer)?;
 
-                let user_account_data = user_account_info.try_borrow_mut_data()?;
-                let user_account:UserAccount = AccountDeserialize::try_deserialize(&mut user_account_data.as_ref())?;
+                let mut user_account_data: std::cell::RefMut<'_, &mut [u8]> = user_account_info.try_borrow_mut_data()?;
+                let mut user_account:UserAccount = AccountDeserialize::try_deserialize(&mut &user_account_data[..])?;
 
-                user_account.locked_collateral = user_account.locked_collateral.checked_sub(order.locked_margin).ok_or(ErrorCode::SubtractionUnderFlow)?;
-                user_account.available_collateral = user_account.available_collateral.checked_add(order.locked_margin).ok_or(ErrorCode::AdditionOverflow)?;
+                user_account.locked_collateral = user_account.locked_collateral.checked_sub(locked_margin).ok_or(ErrorCode::SubtractionUnderFlow)?;
+                user_account.available_collateral = user_account.available_collateral.checked_add(locked_margin).ok_or(ErrorCode::AdditionOverflow)?;
 
                 // Serializing UserAccount Back
-                let mut writer = &mut user_account_data[..];
+                let mut writer = &mut user_account_data.as_mut()[..];
                 user_account.try_serialize(&mut writer)?;
 
-                msg!("Refunded {} to {}", locked_margin, user_key);
-                Ok(())
-
+                msg!("Refunded {} to {}", locked_margin, user_pk);
             },
             _=>{
                 msg!("Unknown Event In the event queue found");
-                Ok(())
             }
         }
     }
 
+    Ok(())
 }
 
 // releasing the margin as they are now moved to the userPosition PDA.
@@ -210,8 +216,8 @@ fn process_order_fill(
 
     let (open_order_pda,_) = Pubkey::find_program_address(&[
         b"open_orders",
-        user_key.key().as_ref(),
-        market_key.key().as_ref(),
+        user_key.as_ref(),
+        market_key.as_ref(),
     ], &crate::ID);
 
     let open_order_account_info = match remaining_accounts.iter().find(|acc| acc.key() == open_order_pda) {
@@ -226,10 +232,10 @@ fn process_order_fill(
 
     let mut data = open_order_account_info.try_borrow_mut_data()?;
 
-    let mut open_orders_account:OpenOrdersAccount = AccountDeserialize::deserialize(&mut &data)?;
+    let mut open_orders_account:OpenOrdersAccount = AccountDeserialize::try_deserialize(&mut &data[..])?;
 
     let order_idx = open_orders_account.find_order_by_order_id(order_id)?;
-    let order = open_orders_account.orders[order_idx];
+    let order = &mut open_orders_account.orders[order_idx];
 
     order.quantity = order.quantity.checked_sub(filled_qty).ok_or(ErrorCode::SubtractionUnderFlow)?;
     // This is a proportion of the margin that we use
@@ -248,7 +254,8 @@ fn process_order_fill(
         open_orders_account.client_order_ids[order_idx] = 0;
     }
 
-    open_orders_account.try_serialize(&mut order)?;
+    let mut writer = &mut data.as_mut()[..];
+    open_orders_account.try_serialize(&mut writer)?;
     Ok(())
 }
 
@@ -279,12 +286,12 @@ fn process_position_update(
     let mut data =  account_info.try_borrow_mut_data()?;
 
     if data.len() < 8 {
-        return Err(error!(ErrorCode::MathError)?);
+        return Err(ErrorCode::MathError.into());
     }
-    let mut position:UserPosition = AccountDeserialize::try_deserialize(&mut &data)?;
+    let mut position:UserPosition = AccountDeserialize::try_deserialize(&mut &data[..])?;
 
     let qty_i64 = qty as i64;
-    let cost = (qty_i64.checked_mul(price as i64)).ok_or(ErrorCode::MathError)?;
+    let cost = qty.checked_mul(price).ok_or(ErrorCode::MathError)?;
 
     if is_short {
         // selling: Quantity decreases (become more negative)
@@ -311,28 +318,25 @@ fn process_position_update(
         let new_avg_val = old_val.checked_add(new_val).ok_or(ErrorCode::AdditionOverflow)?.checked_div(total_qty).ok_or(ErrorCode::DivisonUnderFlow)?;
 
         if qty > 0 {
-            position.avg_entry_price = new_avg_val;
+            position.avg_entry_price = new_avg_val as u64;
         }
     }else {
         // we are decreasing or flipping 
         let remaining_qty_signed = if is_short {
             // shorting , means on the Ask Slab 
             // as we are decreasing the position so qty will be in +ve , so as we have to decrease the position so we will subtract 
-            (position.quantity as i128).checked_sub(qty as i128).ok_or(ErrorCode::SubtractionUnderFlow)?;
+            (position.quantity as i128).checked_sub(qty as i128).ok_or(ErrorCode::SubtractionUnderFlow).unwrap()
         }else{
             // Long , means on the Bid Slab
             // as we are decreasing the position so qty will be in -ve , to change the position we need to add
-            (position.quantity as i128).checked_add(qty as i128).ok_or(ErrorCode::AdditionOverflow)?;
+            (position.quantity as i128).checked_add(qty as i128).ok_or(ErrorCode::AdditionOverflow).unwrap()
         };
 
         // if we are flipping 
         // from long to short then qty will go from +ve to -ve and remaining_qty should be -ve, so qty is +ve & rem_qty is -ve 
         // from short to long then qty will go from -ve to +ve and remaining_qty should be +ve, so qty is -ve and rem_qty is +ve 
-        let is_flipping =  (
-            (position.quantity > 0 && remaining_qty_signed < 0 )
-            ||
-            (position.quantity < 0 && remaining_qty_signed > 0)
-        );
+        let is_flipping =  position.quantity > 0 && remaining_qty_signed < 0  ||
+            position.quantity < 0 && remaining_qty_signed > 0;
 
         if is_flipping{
             // we get a new trade price 
@@ -354,21 +358,25 @@ fn process_position_update(
 
 pub fn process_user_funding_settlement(
     remaining_accounts: &[AccountInfo],
-    market: &Account<'info,Market>,
+    market: &Market,
+    market_key: &Pubkey,
     user_pk: Pubkey
 )->Result<()>{
 
     let (expected_pda,_) = Pubkey::find_program_address(&[
         b"user_position",
         user_pk.as_ref(),
-        market.key().as_ref(),
+        market_key.as_ref(),
     ], &crate::ID);
 
-    let user_account= remaining_accounts.iter().find(|acc| acc.key() == expected_pda)?;
+    let user_account= match remaining_accounts.iter().find(|acc| acc.key() == expected_pda){
+        Some(user_account)=>user_account,
+        None=> return Err(ErrorCode::UserAccountNotFound.into()),
+    };
     
-    let user_account_data = user_account.try_borrow_mut_data()?;
+    let mut user_account_data = user_account.try_borrow_mut_data()?;
 
-    let user_position : UserPosition = AccountDeserialize::try_deserialize(&mut &user_account_data)?;
+    let mut user_position : UserPosition = AccountDeserialize::try_deserialize(&mut &user_account_data[..])?;
 
     let user_cum = user_position.last_cumulative_funding_rate;
     let global_cummulative_funding_rate = market.cummulative_funding_rate;
@@ -379,19 +387,22 @@ pub fn process_user_funding_settlement(
     // If Qty < 0 (Short) and diff > 0 (+ve) : User receives
     // getting payment = Position_size * diff
     // for the new user the funding rate will be 0, as the quantity is 0 
-    let funding_payment_scaled = diff.checked_mul(user_position.quantity).ok_or(ErrorCode::MultiplicationError)?;
+    let funding_payment_scaled = diff.checked_mul(user_position.quantity as i128).ok_or(ErrorCode::MultiplicationError)?;
     let funding_payment = funding_payment_scaled / FUNDING_SCALE;
 
-    // +ve
+    // +ve means user pays, -ve means user receives
     if funding_payment > 0 {
-        user_position.collateral = user_position.collateral.checked_sub(funding_payment).ok_or(ErrorCode::InsufficientCollateral)?;
-    }else{
-        user_position.collateral = user_position.collateral.checked_add(funding_payment).ok_or(ErrorCode::AdditionOverflow)?;
+        let payment = funding_payment as u64;
+        user_position.collateral = user_position.collateral.checked_sub(payment).ok_or(ErrorCode::InsufficientCollateral)?;
+    } else if funding_payment < 0 {
+        let payment = funding_payment.abs() as u64;
+        user_position.collateral = user_position.collateral.checked_add(payment).ok_or(ErrorCode::AdditionOverflow)?;
     }
 
     user_position.last_cumulative_funding_rate = global_cummulative_funding_rate;
 
-    user_position.try_serialize(&mut user_account_data)?;
+    let mut writer = &mut user_account_data.as_mut()[..];
+    user_position.try_serialize(&mut writer)?;
 
     Ok(())
 }

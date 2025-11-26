@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-use crate::OpenOrdersAccount;
+use crate::{Market, OpenOrdersAccount};
 
 #[derive(Accounts)]
 pub struct CreateOpenOrdersAccount<'info>{
@@ -12,7 +12,7 @@ pub struct CreateOpenOrdersAccount<'info>{
         space = OpenOrdersAccount::DISCRIMINATOR.len() +OpenOrdersAccount::INIT_SPACE,
         seeds = [
             b"open_orders",
-            owner.key().as_ref(),
+            signer.key().as_ref(),
             market.key().as_ref()
         ],
         bump,
@@ -26,7 +26,7 @@ pub struct CreateOpenOrdersAccount<'info>{
             market.base_mint.as_ref(),
             market.quote_mint.as_ref(),
         ],
-        bump = market.bump,
+        bump = market.market_bump,
     )]
     pub market:Account<'info,Market>,
 
@@ -34,7 +34,7 @@ pub struct CreateOpenOrdersAccount<'info>{
 }   
 
 pub fn create_open_orders_account(ctx: Context<CreateOpenOrdersAccount>) -> Result<()> {
-    let open_orders_account = &mut ctx.accounts.open_orders_account;
+    let open_orders_account: &mut Account<'_, OpenOrdersAccount> = &mut ctx.accounts.open_orders_account;
 
     open_orders_account.owner = ctx.accounts.signer.key();
     

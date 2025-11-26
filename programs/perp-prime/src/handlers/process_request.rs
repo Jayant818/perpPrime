@@ -44,7 +44,7 @@ fn emit_fill_event(
 }
 
 
-fn process_fill(
+fn process_fill<'info>(
     bids: &mut [u8],
     event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>,
     taker_order: &mut RequestItem,
@@ -69,7 +69,7 @@ fn process_fill(
 
     let price = get_price_from_order_id(max_bid.order_id);
     market.last_price = price;
-    market.last_funding_time = Clock::get()?.unix_timestamp;
+    market.last_funding_time = Clock::get()?.unix_timestamp as i128;
 
     emit_fill_event(
         event_queue,
@@ -191,7 +191,7 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
     let peeked_value = request_queue.peek()?;
 
-    let market = &mut ctx.accounts.market;
+    let mut market = &mut ctx.accounts.market;
 
     let taker_order = match peeked_value {
         Some(item)=>item,
@@ -201,7 +201,7 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
     require_keys_eq!(taker_order.user, open_orders_account.owner, ErrorCode::InvalidOwner);
 
     let clock = Clock::get()?;
-    let current_ts = clock.unix_timestamp;
+    let current_ts = clock.unix_timestamp as i128;
 
     let time_elapsed = current_ts.checked_sub(market.last_funding_time).ok_or(ErrorCode::SubtractionUnderFlow)?;
 
@@ -209,7 +209,7 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
         let funding_added = market.current_funding_velocity.checked_mul(time_elapsed).ok_or(ErrorCode::MathError)?;
         market.cummulative_funding_rate = market.cummulative_funding_rate.checked_add(funding_added).ok_or(ErrorCode::AdditionOverflow)?;
 
-        market.last_traded_ts = current_ts;
+        market.last_traded_ts = current_ts as i64;
     }
 
     match taker_order.request_type {
@@ -221,6 +221,9 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
         },
         LIQUIDATION =>{
             handle_place_order(&taker_order, open_orders_account, &mut *bids, &mut *asks, &mut event_queue, &mut market)?;
+        },
+        _=>{
+            msg!("Invalid Request Type")
         }
     }
 
@@ -233,7 +236,7 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
     let mark_i128 = mark_price as i128;
     let oracle_i128: i128 = oracle_price as i128;
-    let premium = mark_price.checked_sub(oracle_i128).ok_or(ErrorCode::SubtractionUnderFlow)?;
+    let premium = mark_i128.checked_sub(oracle_i128).ok_or(ErrorCode::SubtractionUnderFlow)?;
 
     let clamp = market.funding_clamp as i128;
     let clamped_premium = premium.clamp(-clamp, clamp);
@@ -246,9 +249,8 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
     Ok(())
 }
 
-
 // TODO: Market order are IOC, so it doesn't actually mean to store them in the tree, reject the order for the remaining quantity.
-fn handle_place_order(
+fn handle_place_order<'info>(
     request_item:&RequestItem,
     open_orders_account: &mut Account<'info,OpenOrdersAccount>,
     bids: &mut [u8],
@@ -257,7 +259,7 @@ fn handle_place_order(
     market: &mut Account<'info,Market>,
 )->Result<()>{
 
-    let is_liquidating = request_item.request_type == RequestType::LIQUIDATION;
+    let is_liquidating = request_item.request_type == LIQUIDATION;
 
     let order_idx = open_orders_account.find_order_by_order_id(request_item.order_id)?;
     let order = &mut open_orders_account.orders[order_idx];

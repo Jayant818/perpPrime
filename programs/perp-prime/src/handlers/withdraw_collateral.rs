@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::{token::TokenAccount, token_interface::{TokenInterface, TransferChecked,transfer_checked}};
+use anchor_spl::token_interface::{TokenAccount, TokenInterface, TransferChecked, transfer_checked};
 
 use crate::{GlobalConfig, UserAccount,error::ErrorCode};
 

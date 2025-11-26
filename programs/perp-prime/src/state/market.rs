@@ -14,7 +14,7 @@ pub struct Market{
     // Funding State
     pub funding_rate : i64, // currrent funding rate - scaled by 1e6
     pub funding_clamp:i64, // scaled 1e6
-    pub last_funding_time:u128,
+    pub last_funding_time:i128,
     pub funding_interval:u8,
     pub cummulative_funding_rate : i128,
     pub current_funding_velocity: i128,

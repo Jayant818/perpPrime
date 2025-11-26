@@ -38,10 +38,10 @@ pub struct LiquidatePosition<'info>{
         mut,
         seeds = [
             b"open_orders",
-            owner.key().as_ref(),
+            user.key().as_ref(),
             market.key().as_ref()
         ],
-        bump = open_orders_account.bump,
+        bump = open_order_account.bump,
     )]
     pub open_order_account:Account<'info,OpenOrdersAccount>,
 
@@ -85,13 +85,13 @@ pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
 
     let oracle_price:u64 = 1_000_000;
 
-    let user_position = ctx.accounts.user_position;
-    let market = ctx.accounts.market;
+    let user_position = &mut ctx.accounts.user_position;
+    let market = &mut ctx.accounts.market;
     
     require!(user_position.status == PositionStatus::Active, ErrorCode::PositionIsAlreadyLiquidating);
 
     let mut request_queue = ctx.accounts.request_queue.load_mut()?;
-    let mut open_order_account = &mut ctx.accounts.open_order_account;
+    let open_order_account = &mut ctx.accounts.open_order_account;
 
     // Computing Notional
     // using wider type for match to avoid overflow error
@@ -122,7 +122,7 @@ pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
 
         // Limit_price - Price at which we can sell one quantity, it will differ for both Ask and Sell as we want to close the position, 
         // first calculate the collateral that user paid for single quantity 
-        let price_for_single_quantity_i128 = collateral_i128.checked_div(quantity_i128.unsigned_abs()).unwrap_or(0);
+        let price_for_single_quantity_i128 = collateral_i128.checked_div(quantity_i128.abs()).unwrap_or(0);
         let limit_price_i128 = if order_side == OrderSide::ASK {
             entry_price_i128.checked_sub(price_for_single_quantity_i128).unwrap_or(0)
         }else {
@@ -133,7 +133,6 @@ pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
 
         let quantity_to_lose = user_position.quantity.unsigned_abs();
         let user_key = ctx.accounts.user.key();
-        let position_key = ctx.accounts.user_position.key();
 
         market.sequence = market.sequence.checked_add(1).ok_or(ErrorCode::AdditionOverflow)?;
         let order_id = (limit_price as u128) << 64 | market.sequence as u128;
@@ -157,10 +156,10 @@ pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
         open_order_account.orders[free_slot] = order;
 
         let request_item = RequestItem::init(
-            RequestType::LIQUIDATION, 
+            RequestType::LIQUIDATION as u8, 
             1,//Limit Order 
-            order_side, 
-            position_key, 
+            order_side as u8, 
+            position as u8, 
             quantity_to_lose, 
             user_key, 
             order_id

@@ -28,7 +28,7 @@ pub struct PlacePerpOrder<'info> {
     #[account(
         seeds = [
             b"user_position",
-            user.key().as_ref(),
+            owner.key().as_ref(),
             market.key().as_ref()
         ],
         bump = user_position.bump,
@@ -79,7 +79,7 @@ pub fn place_perp_order(
     client_order_id: u64,
 ) -> Result<()> {
         
-    let user_position = ctx.accounts.user_position;
+    let user_position = &ctx.accounts.user_position;
         
     if user_position.key().is_none() {
         require!(user_position.status == PositionStatus::Active,ErrorCode::AccountIsLocked);
@@ -129,7 +129,7 @@ pub fn place_perp_order(
     open_orders_account.client_order_ids[free_slot_index] = client_order_id;
 
     let request_item = RequestItem { 
-        request_type: RequestType::OPEN,
+        request_type: 0,
         order_type : order_type as u8,
         order_side: side as u8,
         position : position as u8,

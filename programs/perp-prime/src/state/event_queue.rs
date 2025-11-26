@@ -1,31 +1,23 @@
-use std::slice::from_raw_parts_mut;
+use std::slice;
 
 use anchor_lang::prelude::*;
 use bytemuck::{Pod, Zeroable};
 
-use crate::{QueueHeader, EventQueueEntry};
+use crate::{QueueHeader, RequestItem, error::ErrorCode};
 
 pub const EVENT_SIZE: usize = 128;
-
-/// reserved size after tag = EVENT_SIZE - 1 = 111
-pub const ANY_RESERVED_A: usize = 64;
-pub const ANY_RESERVED_B: usize = 32;
-pub const ANY_RESERVED_C: usize = 15;
-const _: () = assert!(ANY_RESERVED_A + ANY_RESERVED_B + ANY_RESERVED_C == EVENT_SIZE - 1);
-
 pub const FILL_EVENT: u8 = 0;
 pub const CANCEL_EVENT:u8 = 1;
-
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub struct AnyEvent {
-    pub tag: u8,   // 0 - FIll , 1 - Cancel
-    pub padding:[u8;7],
-    // split reserved into smaller arrays to satisfy derive checks
-    // pub reserved_a: [u8; ANY_RESERVED_A],
-    // pub reserved_b: [u8; ANY_RESERVED_B],
-    // pub reserved_c: [u8; ANY_RESERVED_C],
-    pub data :[u8;120],
+    pub tag: u8,   // 0 - Fill , 1 - Cancel
+    pub padding: [u8; 7],
+    // Split data into chunks of 64 or lesfs to satisfy Pod bounds
+    pub data_a: [u8; 32],  // 32 bytes
+    pub data_b: [u8; 32],  // 32 bytes
+    pub data_c: [u8; 32],  // 32 bytes
+    pub data_d: [u8; 24],  // 24 bytes
 }
 const _: () = assert!(std::mem::size_of::<AnyEvent>() == EVENT_SIZE);
 
@@ -47,19 +39,19 @@ const _: () = assert!(std::mem::size_of::<FillEventPod>() == EVENT_SIZE);
 
 impl FillEventPod {
     pub fn new(
-        maker: [u8; 32], 
+        maker: Pubkey, 
         maker_order_id: u128, 
         taker_order_id:u128,
         price: u64, 
         quantity: u64, 
-        taker: [u8; 32], 
+        taker: Pubkey, 
         taker_side: u8
     )->Self{
         Self { 
             tag: 0, 
             _padding1: [0;7], 
-            taker, 
-            maker, 
+            taker: bytemuck::cast(taker), 
+            maker: bytemuck::cast(maker), 
             // convert u128 to [u64;2]
             maker_order_id: bytemuck::cast(maker_order_id), 
             taker_order_id: bytemuck::cast(taker_order_id),
@@ -187,7 +179,7 @@ impl EventQueueAccount{
         Ok(())
     }
 
-    pub fn pop(&mut self)-> Result<Option<ResultItem>>{
+    pub fn pop(&mut self)-> Result<Option<EventQueueEntry>>{
         if self.header.count == 0 {
             return Ok(None)
         }

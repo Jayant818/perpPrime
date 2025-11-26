@@ -55,15 +55,15 @@ pub mod perp_prime {
         position:OrderPosition, 
         margin:u64,
         order_type:OrderType,
-        request_type:RequestType
+        client_order_id: u64,
     )->Result<()>{
         
-        handlers::place_perp_order(ctx, amount_in_ui, side, qty_in_ui, position, margin, order_type, request_type)?;
+        handlers::place_perp_order(ctx, amount_in_ui, qty_in_ui, side, position, margin, order_type,client_order_id)?;
         
         Ok(())
     }
 
-    pub fn create_open_orders_account(ctx:Context<OpenOrdersAccount>)->Result<()>{
+    pub fn create_open_orders_account(ctx:Context<CreateOpenOrdersAccount>)->Result<()>{
         handlers::create_open_orders_account(ctx)?;
         Ok(())
     }
@@ -90,6 +90,7 @@ pub mod perp_prime {
 
     pub fn withdraw_collateral(ctx:Context<WithdrawCollateral>, amount_to_withdraw: u64)->Result<()>{
         handlers::withdraw_collateral(ctx, amount_to_withdraw)?;
+        Ok(())
     }
 
 }

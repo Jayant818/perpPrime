@@ -1,6 +1,6 @@
 
 use anchor_lang::prelude::*;
-use anchor_spl::token::Mint;
+use anchor_spl::token_interface::Mint;
 
 use crate::{ EventQueueAccount, EventQueueEntry, GlobalConfig, MARGIN_SCALE, Market, QueueHeader, RequestItem, RequestQueueAccount, Slab,error::ErrorCode};
 
@@ -108,8 +108,8 @@ pub fn initialize_market(
     let mut bids_slab = ctx.accounts.bids.try_borrow_mut_data()?;
     let mut asks_slab = ctx.accounts.asks.try_borrow_mut_data()?;
     
-    request_queue.initialize(128)?;
-    event_queue.initialize(256)?; 
+    request_queue.initialize(128);
+    event_queue.initialize(256); 
 
     Slab::initialize(&mut bids_slab)?;
     Slab::initialize(&mut asks_slab)?;

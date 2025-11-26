@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use crate::UserPosition;
+use crate::{Market, UserPosition};
 
 #[derive(Accounts)]
 pub struct InitializeUserPosition<'info>{

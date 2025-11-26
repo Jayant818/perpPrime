@@ -40,7 +40,7 @@ pub struct CancelOrder<'info>{
         mut,
         seeds = [
             b"open_orders",
-            owner.key().as_ref(),
+            user.key().as_ref(),
             market.key().as_ref()
         ],
         bump = open_orders_account.bump,

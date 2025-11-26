@@ -29,7 +29,7 @@ impl QueueHeader{
         self.tail = 0;
         self.capacity = capacity;
     }
-}
+
 
     pub fn intialize(account_data:&mut[u8],capacity:usize)->Result<()>{
         let header_size = std::mem::size_of::<QueueHeader>();
@@ -49,7 +49,7 @@ impl QueueHeader{
         Ok(())
     }
 
-    pub fn push(account_data:&mut[u8],item:&T)->Result<()>{
+    pub fn push<T: bytemuck::Pod>(account_data:&mut[u8],item:&T)->Result<()>{
 
        let header_size = std::mem::size_of::<QueueHeader>();
        let node_size = std::mem::size_of::<T>();
@@ -87,7 +87,7 @@ impl QueueHeader{
     }
 
     // Pop one item from the queue, return None if Empty 
-    pub fn pop(account_data:&mut[u8])->Result<Option<T>>{
+    pub fn pop<T: bytemuck::Pod>(account_data:&mut[u8])->Result<Option<T>>{
 
         let header_size = std::mem::size_of::<QueueHeader>();
         let node_size = std::mem::size_of::<T>();
@@ -123,7 +123,7 @@ impl QueueHeader{
     }
 
 
-    pub fn peek(account_data:&mut[u8])->Result<Option<T>>{
+    pub fn peek<T: bytemuck::Pod>(account_data:&mut[u8])->Result<Option<T>>{
         let header_size = std::mem::size_of::<QueueHeader>();
         let node_size = std::mem::size_of::<T>();
 
@@ -146,4 +146,5 @@ impl QueueHeader{
         let item_ref:&T = from_bytes(&account_data[offset..end]);
         Ok(Some(*item_ref))
     }
+
 }

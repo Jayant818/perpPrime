@@ -97,6 +97,9 @@ pub enum ErrorCode {
 
     #[msg("Divison Underflow")]
     DivisonUnderFlow,
+
+    #[msg("User Account Not Found")]
+    UserAccountNotFound,
 }   
 
 
