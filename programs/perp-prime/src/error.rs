@@ -91,6 +91,9 @@ pub enum ErrorCode {
 
     #[msg("Invalid Price Feed ID")]
     InvalidPriceFeedId,
+
+    #[msg("Account is Locked")]
+    AccountIsLocked,
 }   
 
 

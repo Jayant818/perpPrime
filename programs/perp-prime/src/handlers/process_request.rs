@@ -4,7 +4,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::token_interface::TokenAccount;
 use bytemuck::{bytes_of, checked::cast};
 
-use crate::{AnyEvent, CancelEventPod, CircularQueue, EventQueueAccount, EventQueueEntry, FUNDING_SCALE, FillEventPod, GlobalConfig, Market, OpenOrdersAccount, OrderSide, OrderStatus, RequestItem, RequestQueueAccount, Slab, SlabNode, array_to_pubkey, error::ErrorCode, pubkey_to_array};
+use crate::{AnyEvent, CancelEventPod, CircularQueue, EventQueueAccount, EventQueueEntry, FUNDING_SCALE, FillEventPod, GlobalConfig, Market, OpenOrdersAccount, OrderSide, OrderStatus, RequestItem, RequestQueueAccount, RequestType, Slab, SlabNode, array_to_pubkey, error::ErrorCode, pubkey_to_array};
 
 fn emit_fill_event(
     event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>,
@@ -221,7 +221,7 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
             handle_cancel_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut event_queue)?;
         },
         LIQUIDATION =>{
-            handle_place_order(&request_item, open_orders_account, bids, asks, &mut event_queue, market)
+            handle_place_order(&request_item, open_orders_account, &mut *bids, &mut *asks, &mut event_queue, &mut market)?;
         }
     }
 
@@ -258,10 +258,17 @@ fn handle_place_order(
     market: &mut Account<'info,Market>,
 )->Result<()>{
 
+    let is_liquidating = request_item.request_type == RequestType::LIQUIDATION;
+
     let order_idx = open_orders_account.find_order_by_order_id(order.order_id)?;
     let order = &mut open_orders_account.orders[order_idx];
 
-    require!(order.status == OrderStatus::PENDING, ErrorCode::OrderAlreadyProcessed);
+    // For liquidation, we are not doing this sanity check cuz , in future we might re-submit the or process it in a way that state is not synchronized
+    // This check forces the order onto the book, and saves the protocol.
+    if !is_liquidating {
+        require!(order.status == OrderStatus::PENDING, ErrorCode::OrderAlreadyProcessed);
+    }
+
     require_eq!(order.order_id,request_item.order_id,ErrorCode::OrderIdMismatch);
 
     order.status = OrderStatus::OPEN;

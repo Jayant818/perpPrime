@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 use crate::{
-    CircularQueue, GlobalConfig, Market, OpenOrdersAccount, Order, OrderPosition, OrderSide, OrderStatus, OrderType, RequestItem, UserAccount, error::ErrorCode, user
+    CircularQueue, GlobalConfig, Market, OpenOrdersAccount, Order, OrderPosition, OrderSide, OrderStatus, OrderType, PositionStatus, RequestItem, UserAccount, UserPosition, error::ErrorCode, user, user_position
 };
 
 #[derive(Accounts)]
@@ -23,6 +23,16 @@ pub struct PlacePerpOrder<'info> {
         has_one = owner @ ErrorCode::InvalidOwner,
     )]
     pub user_account: Account<'info, UserAccount>,
+
+    #[account(
+        seeds = [
+            b"user_position",
+            user.key().as_ref(),
+            market.key().as_ref()
+        ],
+        bump = user_position.bump,
+    )]
+    pub user_position: Account<'info,UserPosition>,
 
     #[account(
         mut,
@@ -68,6 +78,11 @@ pub fn place_perp_order(
     order_type: OrderType,
     client_order_id: u64,
 ) -> Result<()> {
+
+    // What if the user position doesn't exists here then what could you do?
+    let user_position = &ctx.accounts.user_position;
+
+    require!(user_position.status == PositionStatus::Active,ErrorCode::AccountIsLocked);
     
     let user_account = &mut ctx.accounts.user_account;
     let market = &mut ctx.accounts.market;

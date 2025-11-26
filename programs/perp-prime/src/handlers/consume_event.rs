@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::spl_associated_token_account::solana_program::compute_units::sol_remaining_compute_units, token_interface::Mint};
 use bytemuck::{bytes_of, checked::{from_bytes, try_from_bytes}};
-use crate::{FUNDING_SCALE, OpenOrdersAccount, UserAccount, UserPosition, error::ErrorCode, user, user_position};
+use crate::{FUNDING_SCALE, OpenOrdersAccount, PositionStatus, UserAccount, UserPosition, error::ErrorCode, user, user_position};
 
 use crate::{CANCEL_EVENT, CancelEventPod, CircularQueue, EventQueue, EventQueueAccount, FILL_EVENT, FillEventPod, Market, error::ErrorCode};
 
@@ -287,6 +287,10 @@ fn process_position_update(
     }else {
         position.quantity = position.quantity.checked_add(qty_i64).ok_or(ErrorCode::MathError)?;
         position.collateral = position.collateral.checked_add(cost).ok_or(ErrorCode::MathError)?;
+    }
+
+    if position.quantity == 0{
+        position.status = PositionStatus::Active;
     }
 
     // serialize back the data 
