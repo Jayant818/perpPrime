@@ -250,7 +250,7 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 // TODO: Market order are IOC, so it doesn't actually mean to store them in the tree, reject the order for the remaining quantity.
 fn handle_place_order(
     request_item:&RequestItem,
-    open_orders_account: &mut Account<OpenOrdersAccount>,
+    open_orders_account: &mut Account<'info,OpenOrdersAccount>,
     bids: &mut [u8],
     asks: &mut [u8],
     event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>,
@@ -259,7 +259,7 @@ fn handle_place_order(
 
     let is_liquidating = request_item.request_type == RequestType::LIQUIDATION;
 
-    let order_idx = open_orders_account.find_order_by_order_id(order.order_id)?;
+    let order_idx = open_orders_account.find_order_by_order_id(request_item.order_id)?;
     let order = &mut open_orders_account.orders[order_idx];
 
     // For liquidation, we are not doing this sanity check cuz , in future we might re-submit the or process it in a way that state is not synchronized
@@ -271,6 +271,8 @@ fn handle_place_order(
     require_eq!(order.order_id,request_item.order_id,ErrorCode::OrderIdMismatch);
 
     order.status = OrderStatus::OPEN;
+
+    let mut taker_order = *request_item;
 
     match taker_order.order_side{
         ASK =>{
@@ -298,7 +300,7 @@ fn handle_place_order(
                             let max_bid_price = Slab::get_price_from_key(max_bid.key);
 
                             // process a single fill between taker_order and max_bid
-                            process_fill(&mut bids, &mut event_queue, &mut taker_order, max_bid_idx, max_bid,market)?;
+                            process_fill(bids, event_queue, &mut taker_order, max_bid_idx, max_bid,market)?;
 
                             // if taker filled, we break
                             if taker_order.quantity == 0 {
@@ -311,7 +313,7 @@ fn handle_place_order(
                         // Check if there is still some quantity left 
                         if taker_order.quantity > 0 {
                             // push that into the slab tree (policy: post leftover as resting ask)
-                            Slab::insert(&mut asks, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
+                            Slab::insert( asks, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
                         }
                     },
                     LIMIT_ORDER =>{
@@ -327,7 +329,7 @@ fn handle_place_order(
                             let bid_slab_header = Slab::read_header(&bids)?;
                             if bid_slab_header.order_count == 0 {
                                 // no bids left -> insert resting ask (leftover) and stop
-                                Slab::insert(&mut asks, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
+                                Slab::insert(asks, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
                                 break;
                             }
 
@@ -337,11 +339,11 @@ fn handle_place_order(
 
                             // buy price is less that the ask/sell price , so trade didn't happen , it will just sit in the ask orderbook
                             if max_bid_price < taker_order_price {
-                                Slab::insert(&mut asks, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
+                                Slab::insert(asks, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
                                 break;
                             }else {
                                 // price crosses: execute a match
-                                process_fill(&mut bids, &mut event_queue, &mut taker_order, max_bid_idx, max_bid,market)?;
+                                process_fill(bids,  event_queue, &mut taker_order, max_bid_idx, max_bid,market)?;
 
                                 // if taker filled, break
                                 if taker_order.quantity == 0 {
@@ -375,13 +377,13 @@ fn handle_place_order(
 
                         let (min_ask_idx, min_ask) = Slab::find_min(&asks)?;
                         // process a single fill between taker_order (buy) and min_ask (maker)
-                        process_fill(&mut asks, &mut event_queue, &mut taker_order, min_ask_idx, min_ask,market)?;
+                        process_fill(asks,  event_queue, &mut taker_order, min_ask_idx, min_ask,market)?;
 
                         if taker_order.quantity == 0 { break; }
                     }
 
                     if taker_order.quantity > 0 {
-                        Slab::insert(&mut bids, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
+                        Slab::insert(bids, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
                     }
                 },
                 LIMIT_ORDER=>{
@@ -393,7 +395,7 @@ fn handle_place_order(
 
                         let ask_slab_header = Slab::read_header(&asks)?;
                         if ask_slab_header.order_count == 0 {
-                            Slab::insert(&mut bids, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
+                            Slab::insert(bids, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
                             break;
                         }
 
@@ -402,10 +404,10 @@ fn handle_place_order(
 
                         if min_ask_price > taker_order_price {
                             // best ask too expensive -> post resting bid
-                            Slab::insert(&mut bids, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
+                            Slab::insert(bids, taker_order.order_id, taker_order.user, taker_order.quantity, taker_order.order_id)?;
                             break;
                         } else {
-                            process_fill(&mut asks, &mut event_queue, &mut taker_order, min_ask_idx, min_ask,market)?;
+                            process_fill( asks, event_queue, &mut taker_order, min_ask_idx, min_ask,market)?;
 
                             if taker_order.quantity == 0 { break; }
                         }
@@ -473,7 +475,7 @@ fn handle_cancel_order(
             order.status = OrderStatus::CANCELLED;
 
         },
-        Err=>{
+        Err(_)=>{
             msg!("Order not found in the slab, assuming either it is filled or already cancelled ");
         }
     }

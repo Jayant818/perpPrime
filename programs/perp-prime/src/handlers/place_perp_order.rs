@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use anchor_spl::token_interface::spl_pod::option::Nullable;
 use crate::{
     GlobalConfig, Market, OpenOrdersAccount, Order, OrderPosition, OrderSide, OrderStatus, OrderType, PositionStatus, RequestItem, RequestQueueAccount, UserAccount, UserPosition, error::ErrorCode, user, user_position
 };
@@ -77,8 +78,10 @@ pub fn place_perp_order(
     order_type: OrderType,
     client_order_id: u64,
 ) -> Result<()> {
-
-    if let Some(position) = &ctx.accounts.user_position {
+        
+    let user_position = ctx.accounts.user_position;
+        
+    if user_position.key().is_none() {
         require!(user_position.status == PositionStatus::Active,ErrorCode::AccountIsLocked);
     }
     

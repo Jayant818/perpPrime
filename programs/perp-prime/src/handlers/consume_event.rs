@@ -43,7 +43,7 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
 
     // Updating global funding rate, event though no trades have happend , we still bring the global ts to now , so user pay fair.
     // also the oracle price may change so we don't want the new user to pay.
-    let elapsed_time = current_ts.checked_sub(current_ts).ok_or(ErrorCode::SubtractionUnderFlow)?;
+    let elapsed_time = current_ts.checked_sub(market.last_traded_ts).unwrap_or(0);
     if elapsed_time > 0 {
         let funding_added = market.current_funding_velocity.checked_mul(elapsed_time).ok_or(ErrorCode::MultiplicationError)?;
         market.cummulative_funding_rate = market.cummulative_funding_rate.checked_add(funding_added).ok_or(ErrorCode::AdditionOverflow)?;
@@ -235,12 +235,17 @@ fn process_order_fill(
     // This is a proportion of the margin that we use
 
     // We convert the data to u128 while doing operation so that overflow didn't happen.
-    let margin_release = (filled_qty as u128).checked_mul(order.locked_margin as u128).ok_or(ErrorCode::MathError)?.checked_div(order.quantity as u128).ok_or(ErrorCode::MathError)? as u64;
-    order.locked_margin = order.locked_margin.checked_sub(ErrorCode::SubtractionUnderFlow)?;
+    let margin_release = (filled_qty as u128)
+                                .checked_mul(order.locked_margin as u128)
+                                .ok_or(ErrorCode::MathError)?
+                                .checked_div(order.quantity as u128)
+                                .ok_or(ErrorCode::MathError)? as u64;
+
+    order.locked_margin = order.locked_margin.checked_sub(margin_release).ok_or(ErrorCode::SubtractionUnderFlow)?;
 
     if order.quantity == 0 {
         order.status = crate::OrderStatus::FREE;
-        open_orders_account.client_order_id[order_idx] = 0;
+        open_orders_account.client_order_ids[order_idx] = 0;
     }
 
     open_orders_account.try_serialize(&mut order)?;

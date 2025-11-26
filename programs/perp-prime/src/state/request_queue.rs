@@ -64,7 +64,7 @@ impl RequestQueueAccount {
         Ok(())
     }
 
-    pub fn pop(&mut self)-> Result<Option<ResultItem>>{
+    pub fn pop(&mut self)-> Result<Option<RequestItem>>{
         if self.header.count == 0 {
             return Ok(None)
         }
