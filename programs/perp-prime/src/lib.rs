@@ -82,5 +82,9 @@ pub mod perp_prime {
         handlers::consume_event(ctx, max_events)
     }
 
+    pub fn liquidate_position(ctx: Context<LiquidatePosition>) -> Result<()> {
+        handlers::liquidate_position(ctx)
+    }
+
 
 }

@@ -94,6 +94,9 @@ pub enum ErrorCode {
 
     #[msg("Account is Locked")]
     AccountIsLocked,
+
+    #[msg("Divison Underflow")]
+    DivisonUnderFlow,
 }   
 
 

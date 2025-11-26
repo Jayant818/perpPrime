@@ -85,6 +85,7 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                     maker_pk, 
                     fill_event.quantity, 
                     fill_event.price, 
+                    // 0 - bid , 1- Ask
                     fill_event.taker_side == 0  // if taker was bid , maker was Ask - shorting
                 )?;
 
@@ -289,8 +290,54 @@ fn process_position_update(
         position.collateral = position.collateral.checked_add(cost).ok_or(ErrorCode::MathError)?;
     }
 
+    // Updating the average_entry_price if we are increasing the position size , but if we are closing a position then average entry price remains same
+    // Increasing - Weighted Average
+    // Decreasing - No Change
+    // Flipping - Reset to Trade Price 
+    let is_increasing = (position.quantity > 0 && !is_short)  || (position.quantity < 0  && is_short) || position.quantity == 0;
+
+    if is_increasing {
+        // avg - total value / total qty
+        let old_val = (position.quantity as i128).checked_mul(position.avg_entry_price as i128).ok_or(ErrorCode::MultiplicationError)?;
+        let new_val = (qty as i128).checked_mul(price as i128).ok_or(ErrorCode::MultiplicationError)?;
+
+        let total_qty = (position.quantity as i128).checked_add(qty as i128).ok_or(ErrorCode::AdditionOverflow)?;
+
+        let new_avg_val = old_val.checked_add(new_val).ok_or(ErrorCode::AdditionOverflow)?.checked_div(total_qty).ok_or(ErrorCode::DivisonUnderFlow)?;
+
+        if qty > 0 {
+            position.avg_entry_price = new_avg_val;
+        }
+    }else {
+        // we are decreasing or flipping 
+        let remaining_qty_signed = if is_short {
+            // shorting , means on the Ask Slab 
+            // as we are decreasing the position so qty will be in +ve , so as we have to decrease the position so we will subtract 
+            (position.quantity as i128).checked_sub(qty as i128).ok_or(ErrorCode::SubtractionUnderFlow)?;
+        }else{
+            // Long , means on the Bid Slab
+            // as we are decreasing the position so qty will be in -ve , to change the position we need to add
+            (position.quantity as i128).checked_add(qty as i128).ok_or(ErrorCode::AdditionOverflow)?;
+        };
+
+        // if we are flipping 
+        // from long to short then qty will go from +ve to -ve and remaining_qty should be -ve, so qty is +ve & rem_qty is -ve 
+        // from short to long then qty will go from -ve to +ve and remaining_qty should be +ve, so qty is -ve and rem_qty is +ve 
+        let is_flipping =  (
+            (position.quantity > 0 && remaining_qty_signed < 0 )
+            ||
+            (position.quantity < 0 && remaining_qty_signed > 0)
+        );
+
+        if is_flipping{
+            // we get a new trade price 
+            position.avg_entry_price = price;
+        }
+    }
+
     if position.quantity == 0{
         position.status = PositionStatus::Active;
+        position.avg_entry_price = 0;
     }
 
     // serialize back the data 
