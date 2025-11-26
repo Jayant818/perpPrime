@@ -8,10 +8,10 @@ use crate::{GlobalConfig, UserAccount,error::ErrorCode};
 // I think here we need to lock the user 
 pub struct WithdrawCollateral<'info>{
     #[account(mut)]
-    pub user: Signer<'info>,
+    pub owner: Signer<'info>,
 
     #[account(
-        associated_token::authority = user,
+        associated_token::authority = owner,
         associated_token::mint = config.vault_mint,
     )]
     pub user_ata: InterfaceAccount<'info,TokenAccount>,
@@ -19,9 +19,10 @@ pub struct WithdrawCollateral<'info>{
     #[account(
         seeds = [
             b"user_account",
-            user.key().as_ref()
+            owner.key().as_ref()
         ],
         bump = user_account.bump,
+        has_one = owner @ErrorCode::InvalidOwner,
     )]
     pub user_account:Account<'info,UserAccount>,
 
@@ -37,7 +38,6 @@ pub struct WithdrawCollateral<'info>{
         mut,
         seeds = [b"user_vault", user_account.key().as_ref()],
         bump,
-
     )]
     pub user_collateral_vault : InterfaceAccount<'info,TokenAccount>,
 
@@ -49,6 +49,9 @@ pub fn withdraw_collateral(ctx:Context<WithdrawCollateral>, amount_to_withdraw: 
     let user_account = &ctx.accounts.user_account;
 
     require!(user_account.available_collateral >= amount_to_withdraw,ErrorCode::InsufficientCollateral);
+
+    user_account.available_collateral.checked_sub(amount_to_withdraw).ok_or(ErrorCode::SubtractionUnderFlow)?;
+    user_account.total_collateral.checked_sub(amount_to_withdraw).ok_or(ErrorCode::SubtractionUnderFlow)?;
 
     let user_ata = &mut ctx.accounts.user_ata;
 
@@ -65,15 +68,25 @@ pub fn withdraw_collateral(ctx:Context<WithdrawCollateral>, amount_to_withdraw: 
         to: user_ata.to_account_info(),
     };
 
-    let cpi_context = CpiContext::new(
+    let user_key = ctx.accounts.owner.key();
+
+    let seeds = &[
+        b"user_account",
+        user_key.as_ref(),
+        &[user_account.bump]
+    ];
+
+    let signer = &[&seeds[..]];
+
+
+    let cpi_context = CpiContext::new_with_signer(
         token_program.to_account_info(), 
-        transfer_accounts
+        transfer_accounts,
+        signer,
     );
 
     transfer_checked(cpi_context, amount_to_withdraw, config.decimals)?;
-
-    user_account.available_collateral.checked_sub(amount_to_withdraw).ok_or(ErrorCode::SubtractionUnderFlow)?;
-    user_account.total_collateral.checked_sub(amount_to_withdraw).ok_or(ErrorCode::SubtractionUnderFlow)?;
-
+    
+    Ok(())
 }
 

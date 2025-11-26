@@ -79,10 +79,9 @@ pub fn place_perp_order(
     client_order_id: u64,
 ) -> Result<()> {
 
-    // What if the user position doesn't exists here then what could you do?
-    let user_position = &ctx.accounts.user_position;
-
-    require!(user_position.status == PositionStatus::Active,ErrorCode::AccountIsLocked);
+    if let Some(position) = &ctx.accounts.user_position {
+        require!(user_position.status == PositionStatus::Active,ErrorCode::AccountIsLocked);
+    }
     
     let user_account = &mut ctx.accounts.user_account;
     let market = &mut ctx.accounts.market;

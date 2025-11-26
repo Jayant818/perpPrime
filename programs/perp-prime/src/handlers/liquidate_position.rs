@@ -84,11 +84,10 @@ pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
 
     let oracle_price:u64 = 1_000_000;
 
-
     let user_position = ctx.accounts.user_position;
     let market = ctx.accounts.market;
     
-    require!(!user_position.is_liquidating, ErrorCode::PositionIsAlreadyLiquidating);
+    require!(user_position.status == PositionStatus::Active, ErrorCode::PositionIsAlreadyLiquidating);
 
     let mut request_queue = ctx.accounts.request_queue.load_mut()?;
     let mut open_order_account = &mut ctx.accounts.open_order_account;
@@ -105,14 +104,14 @@ pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
     let maintaince_margin_i128  = notional_i128.checked_mul(market.maintainence_margin as i128).ok_or(ErrorCode::MultiplicationError)?.checked_div(MARGIN_SCALE as i128).ok_or(ErrorCode::MathError)?;
 
     let entry_price_i128 = user_position.avg_entry_price as i128;
-    let pnl_i128 = (oracle_price_i128 - entry_price_128) * quantity_i128;
+    let pnl_i128 = (oracle_price_i128 - entry_price_i128) * quantity_i128;
     let collateral_i128 = user_position.collateral as i128;
 
     // what if the unrealized_pnl is -ve
     let equity_i128 = (collateral_i128 as i128).checked_add(pnl_i128).ok_or(ErrorCode::AdditionOverflow)?;
 
     if equity_i128 < maintaince_margin_i128{
-        user_position.is_liquidating = true;
+        user_position.status= PositionStatus::Liquidating;
 
         let (order_side,position) = if quantity_i128 > 0 {
             (OrderSide::ASK, OrderPosition::SHORT)

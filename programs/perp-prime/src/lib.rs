@@ -21,7 +21,6 @@ pub mod perp_prime {
         Ok(())
     }
 
-
     pub fn initialize_market(
         ctx:Context<InitializeMarket>,
         pair:String,
@@ -41,9 +40,9 @@ pub mod perp_prime {
         Ok(())
     }
 
-    pub fn deposit_collateral(ctx:Context<DepositCollateral>,amount:u64,decimals:u8)->Result<()>{
+    pub fn deposit_collateral(ctx:Context<DepositCollateral>,amount:u64)->Result<()>{
         
-        handlers::deposit_collateral(ctx, amount, decimals)?;
+        handlers::deposit_collateral(ctx, amount)?;
         
         Ok(())
     }
@@ -70,21 +69,27 @@ pub mod perp_prime {
     }
 
     pub fn cancel_order(ctx: Context<CancelOrder>, client_order_id: u64) -> Result<()> {
-        handlers::cancel_order(ctx, client_order_id)
+        handlers::cancel_order(ctx, client_order_id)?;
+        Ok(())
     }
 
     pub fn process_request(ctx: Context<ProcessRequest>, pair: String) -> Result<()> {
-        handlers::process_request(ctx, pair)
+        handlers::process_request(ctx, pair)?;
+        Ok(())
     }
 
-    // 3. Expose Settlement Engine (Crank 2)
     pub fn consume_events(ctx: Context<ConsumeEvents>, max_events: u64) -> Result<()> {
-        handlers::consume_event(ctx, max_events)
+        handlers::consume_event(ctx, max_events)?;
+        Ok(())
     }
 
     pub fn liquidate_position(ctx: Context<LiquidatePosition>) -> Result<()> {
-        handlers::liquidate_position(ctx)
+        handlers::liquidate_position(ctx)?;
+        Ok(())
     }
 
+    pub fn withdraw_collateral(ctx:Context<WithdrawCollateral>, amount_to_withdraw: u64)->Result<()>{
+        handlers::withdraw_collateral(ctx, amount_to_withdraw)?;
+    }
 
 }
