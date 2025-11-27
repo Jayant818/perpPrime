@@ -71,6 +71,7 @@ pub struct PlacePerpOrder<'info> {
 
 pub fn place_perp_order(
     ctx: Context<PlacePerpOrder>,
+    _pair: String,
     limit_price_in_lots: u64, 
     qty_in_lots: u64,
     side: OrderSide,

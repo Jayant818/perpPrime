@@ -1,16 +1,10 @@
-import * as anchor from "@coral-xyz/anchor";
-import { Program } from "@coral-xyz/anchor";
-import { PerpPrime } from "../target/types/perp_prime";
+import { Address, createSolanaRpc } from "@solana/kit";
+import { describe, before, test } from "node:test";
 
-describe("perp-prime", () => {
-  // Configure the client to use the local cluster.
-  anchor.setProvider(anchor.AnchorProvider.env());
+const RPC_URL = "http://127.0.0.1:8899";
+const RPC_SUBSCRIPTION_URL = "ws://127.0.0.1:8900";
 
-  const program = anchor.workspace.perpPrime as Program<PerpPrime>;
+const PERP_PRIME_PROGRAM_ID = "" as Address;
 
-  it("Is initialized!", async () => {
-    // Add your test here.
-    const tx = await program.methods.initialize().rpc();
-    console.log("Your transaction signature", tx);
-  });
-});
+const rpc = createSolanaRpc(RPC_URL);
+

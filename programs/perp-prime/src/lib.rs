@@ -48,7 +48,8 @@ pub mod perp_prime {
     }
 
     pub fn place_perp_order(
-        ctx:Context<PlacePerpOrder>, 
+        ctx:Context<PlacePerpOrder>,
+        pair: String,
         amount_in_ui:u64, 
         side:OrderSide,
         qty_in_ui:u64,
@@ -58,7 +59,7 @@ pub mod perp_prime {
         client_order_id: u64,
     )->Result<()>{
         
-        handlers::place_perp_order(ctx, amount_in_ui, qty_in_ui, side, position, margin, order_type,client_order_id)?;
+        handlers::place_perp_order(ctx, pair, amount_in_ui, qty_in_ui, side, position, margin, order_type,client_order_id)?;
         
         Ok(())
     }
