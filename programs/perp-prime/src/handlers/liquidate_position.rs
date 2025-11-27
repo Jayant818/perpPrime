@@ -41,9 +41,9 @@ pub struct LiquidatePosition<'info>{
             user.key().as_ref(),
             market.key().as_ref()
         ],
-        bump = open_order_account.bump,
+        bump,
     )]
-    pub open_order_account:Account<'info,OpenOrdersAccount>,
+    pub open_order_account:AccountLoader<'info,OpenOrdersAccount>,
 
     #[account(
         seeds = [
@@ -75,6 +75,7 @@ pub struct LiquidatePosition<'info>{
     )]
     pub quote_mint: InterfaceAccount<'info,Mint>,
 
+    /// CHECK:
     #[account(
         constraint = price_feed.key() == market.oracle_price_feed.key() @ErrorCode::InvalidPriceFeedId,
     )]
@@ -91,7 +92,7 @@ pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
     require!(user_position.status == PositionStatus::Active, ErrorCode::PositionIsAlreadyLiquidating);
 
     let mut request_queue = ctx.accounts.request_queue.load_mut()?;
-    let open_order_account = &mut ctx.accounts.open_order_account;
+    let mut open_order_account = ctx.accounts.open_order_account.load_mut()?;
 
     // Computing Notional
     // using wider type for match to avoid overflow error
@@ -141,15 +142,14 @@ pub fn liquidate_position(ctx:Context<LiquidatePosition>)->Result<()>{
 
         let order = Order::new(
             crate::OrderStatus::PENDING, 
-            quantity_to_lose, 
-            order_id, 
-            0,  // Liquidations Orders doesn't have order Id
-            true, 
             order_side, 
             crate::OrderType::LimitOrder, 
-            position,
-            // I think in this case as perp order is placed so locked margin will be 0 
-            0,  
+            position, 
+            true, 
+            quantity_to_lose, 
+            order_id, 
+            0, 
+            0, 
             limit_price
         );
 

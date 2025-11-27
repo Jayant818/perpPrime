@@ -78,7 +78,7 @@ pub mod perp_prime {
         Ok(())
     }
 
-    pub fn consume_events(ctx: Context<ConsumeEvents>, max_events: u64) -> Result<()> {
+    pub fn consume_events<'info>(ctx: Context<'_, '_, 'info, 'info, ConsumeEvents<'info>>, max_events: u64) -> Result<()> {
         handlers::consume_event(ctx, max_events)?;
         Ok(())
     }

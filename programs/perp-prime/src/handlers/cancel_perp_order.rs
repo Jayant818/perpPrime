@@ -37,32 +37,31 @@ pub struct CancelOrder<'info>{
     pub user_global_account: Account<'info,UserAccount>,
 
     #[account(
-        mut,
         seeds = [
             b"open_orders",
             user.key().as_ref(),
             market.key().as_ref()
         ],
-        bump = open_orders_account.bump,
+        bump,
     )]
-    pub open_orders_account : Account<'info,OpenOrdersAccount>,
+    pub open_orders_account : AccountLoader<'info,OpenOrdersAccount>,
 }
 
 pub fn cancel_order(ctx:Context<CancelOrder>,client_order_id:u64)->Result<()>{
 
-    let open_orders_account = &mut ctx.accounts.open_orders_account;
+    let open_orders_account =  ctx.accounts.open_orders_account.load_mut()?;
 
     // Finding the order by its Client ID - O(n)
     let order_index = open_orders_account.find_order_by_client_id(client_order_id)?;
 
     let order_to_cancel = & open_orders_account.orders[order_index];
 
-    require!(order_to_cancel.status == OrderStatus::OPEN || order_to_cancel.status == OrderStatus::PENDING, ErrorCode::OrderAlreadyProcessed);
+    require!(order_to_cancel.get_status() == OrderStatus::OPEN || order_to_cancel.get_status() == OrderStatus::PENDING, ErrorCode::OrderAlreadyProcessed);
 
     let order_id = order_to_cancel.order_id;
 
     let request_item = RequestItem {
-        order_id: order_id,
+        order_id: u128::from_le_bytes(order_id),
         order_side: order_to_cancel.side as u8,
         order_type:order_to_cancel.order_type as u8,
         position:order_to_cancel.position as u8,

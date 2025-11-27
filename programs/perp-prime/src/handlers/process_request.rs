@@ -1,4 +1,5 @@
 use core::time;
+use std::cell::RefMut;
 
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::TokenAccount;
@@ -16,9 +17,6 @@ fn emit_fill_event(
     taker: Pubkey,
     taker_side: u8,
 ) -> Result<()> {
-    let maker_bytes = pubkey_to_array(maker);
-    let taker_bytes = pubkey_to_array(taker);
-
    let fill = FillEventPod::new(
         maker, 
         maker_order_id, 
@@ -138,6 +136,7 @@ pub struct ProcessRequest<'info>{
     )]
     pub event_queue: AccountLoader<'info,EventQueueAccount>,
 
+    /// CHECK:
     #[account(
         mut,
         seeds = [
@@ -148,6 +147,7 @@ pub struct ProcessRequest<'info>{
     )]
     pub bids: UncheckedAccount<'info>,
 
+    /// CHECK:
     #[account(
         mut,
         seeds = [
@@ -160,6 +160,7 @@ pub struct ProcessRequest<'info>{
 
     // This is provided by cranker by peeking the request Queue. Also we don't need the userAccount, cuz lock phle kar diya hai and unlocking and settling wagara consume_event mai hoga 
     #[account(
+        mut,
         // should cranker provide the user also
         // seeds = [
         //     b"open_orders",
@@ -168,7 +169,7 @@ pub struct ProcessRequest<'info>{
         // ],
         // bump = open_orders_account.bump,
     )]
-    pub open_orders_account: Account<'info,OpenOrdersAccount>,
+    pub open_orders_account: AccountLoader<'info,OpenOrdersAccount>,
 }
 
 const BID: u8 = 0;
@@ -187,7 +188,7 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
     let mut bids = ctx.accounts.bids.try_borrow_mut_data()?;
     let mut asks = ctx.accounts.asks.try_borrow_mut_data()?;
 
-    let open_orders_account = &mut ctx.accounts.open_orders_account;
+    let mut open_orders_account: std::cell::RefMut<'_, OpenOrdersAccount> = ctx.accounts.open_orders_account.load_mut()?;
 
     let peeked_value = request_queue.peek()?;
 
@@ -214,13 +215,13 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 
     match taker_order.request_type {
         OPEN => {
-            handle_place_order(&taker_order, open_orders_account, &mut *bids, &mut *asks, &mut event_queue,&mut market)?;
+            handle_place_order(&taker_order, &mut open_orders_account, &mut *bids, &mut *asks, &mut event_queue,&mut market)?;
         },
         CANCEL =>{
-            handle_cancel_order(&taker_order, open_orders_account, &mut *bids, &mut *asks, &mut event_queue)?;
+            handle_cancel_order(&taker_order, &mut open_orders_account, &mut *bids, &mut *asks, &mut event_queue)?;
         },
         LIQUIDATION =>{
-            handle_place_order(&taker_order, open_orders_account, &mut *bids, &mut *asks, &mut event_queue, &mut market)?;
+            handle_place_order(&taker_order, &mut open_orders_account, &mut *bids, &mut *asks, &mut event_queue, &mut market)?;
         },
         _=>{
             msg!("Invalid Request Type")
@@ -252,10 +253,10 @@ pub fn process_request(ctx:Context<ProcessRequest>,pair:String)->Result<()>{
 // TODO: Market order are IOC, so it doesn't actually mean to store them in the tree, reject the order for the remaining quantity.
 fn handle_place_order<'info>(
     request_item:&RequestItem,
-    open_orders_account: &mut Account<'info,OpenOrdersAccount>,
+    open_orders_account: &mut RefMut<'_, OpenOrdersAccount>,
     bids: &mut [u8],
     asks: &mut [u8],
-    event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>,
+    event_queue: &mut RefMut<'_, EventQueueAccount>,
     market: &mut Account<'info,Market>,
 )->Result<()>{
 
@@ -267,12 +268,12 @@ fn handle_place_order<'info>(
     // For liquidation, we are not doing this sanity check cuz , in future we might re-submit the or process it in a way that state is not synchronized
     // This check forces the order onto the book, and saves the protocol.
     if !is_liquidating {
-        require!(order.status == OrderStatus::PENDING, ErrorCode::OrderAlreadyProcessed);
+        require!(order.get_status() == OrderStatus::PENDING, ErrorCode::OrderAlreadyProcessed);
     }
 
-    require_eq!(order.order_id,request_item.order_id,ErrorCode::OrderIdMismatch);
+    require_eq!(u128::from_le_bytes(order.order_id),request_item.order_id,ErrorCode::OrderIdMismatch);
 
-    order.status = OrderStatus::OPEN;
+    order.set_status(OrderStatus::OPEN);
 
     let mut taker_order = *request_item;
 
@@ -430,23 +431,23 @@ fn handle_place_order<'info>(
 
 fn handle_cancel_order(
     request:&RequestItem,
-    open_orders_account: &mut Account<OpenOrdersAccount>,
+    open_orders_account: &mut RefMut<'_, OpenOrdersAccount>,
     bids: &mut [u8],
     asks: &mut [u8],
-    event_queue: &mut std::cell::RefMut<'_, EventQueueAccount>,
+    event_queue: &mut RefMut<'_, EventQueueAccount>,
 )->Result<()>{
 
     let order_index = open_orders_account.find_order_by_order_id(request.order_id)?;
     let order = &mut open_orders_account.orders[order_index];
 
     // what about PENDING order here , if the order is pending means it is in the request queue and will be processed before the cancel order , so we never encounter the PENDING state
-    if order.status == OrderStatus::FREE || order.status == OrderStatus::FILLED {
+    if order.get_status() == OrderStatus::FREE || order.get_status() == OrderStatus::FILLED {
         return Ok(())
     }
 
     let node:SlabNode;
 
-    let remove_result = match order.side {
+    let remove_result = match order.get_side() {
         OrderSide::BID =>{
             // We are on the bid side 
             Slab::remove_by_key( bids, request.order_id)
@@ -474,7 +475,7 @@ fn handle_cancel_order(
 
             event_queue.push(&item);
 
-            order.status = OrderStatus::CANCELLED;
+            order.set_status(OrderStatus::CANCELLED);
 
         },
         Err(_)=>{

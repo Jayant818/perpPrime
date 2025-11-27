@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_spl::{associated_token::spl_associated_token_account::solana_program::compute_units::sol_remaining_compute_units, token_interface::Mint};
 use bytemuck::{bytes_of, checked::try_from_bytes};
 use crate::{FUNDING_SCALE, OpenOrdersAccount, PositionStatus, UserAccount, UserPosition, error::ErrorCode};
-use crate::{CANCEL_EVENT, CancelEventPod, EventQueueAccount, FILL_EVENT, FillEventPod, Market};
+use crate::{CANCEL_EVENT, CancelEventPod, EventQueueAccount, FILL_EVENT, FillEventPod, Market, OrderStatus};
 
 #[derive(Accounts)]
 pub struct ConsumeEvents<'info>{
@@ -34,7 +34,7 @@ pub struct ConsumeEvents<'info>{
     pub quote_mint:InterfaceAccount<'info,Mint>,
 }
 
-pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
+pub fn consume_event<'info>(ctx:Context<'_, '_, 'info, 'info, ConsumeEvents<'info>>,max_events:u64)->Result<()>{
 
     let event_queue = ctx.accounts.event_queue.load_mut()?;
     let market = &mut ctx.accounts.market;
@@ -163,9 +163,8 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
                     }
                 };
 
-                let mut data = open_orders_account_info.try_borrow_mut_data()?;
-
-                let mut open_orders_account:OpenOrdersAccount = AnchorDeserialize::deserialize(&mut &data[..])?;
+                let open_orders_account_loader:AccountLoader<'_, OpenOrdersAccount> = AccountLoader::try_from(open_orders_account_info)?;
+                let mut open_orders_account = open_orders_account_loader.load_mut()?;
 
                 // Convert [u64; 2] to u128
                 let order_id = (cancel_event.order_id[0] as u128) | ((cancel_event.order_id[1] as u128) << 64);
@@ -175,14 +174,12 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
 
                 let order = &mut open_orders_account.orders[order_idx];
 
-                order.status = crate::OrderStatus::FREE;
-                order.order_id = 0;
+                order.set_status(OrderStatus::FILLED);
+                order.order_id = [0u8; 16];
                 order.locked_margin = 0;
                 order.quantity = 0;
                 open_orders_account.client_order_ids[order_idx] = 0;
 
-                let mut writer = &mut data[..];
-                open_orders_account.try_serialize(&mut writer)?;
 
                 let mut user_account_data: std::cell::RefMut<'_, &mut [u8]> = user_account_info.try_borrow_mut_data()?;
                 let mut user_account:UserAccount = AccountDeserialize::try_deserialize(&mut &user_account_data[..])?;
@@ -206,8 +203,8 @@ pub fn consume_event(ctx:Context<ConsumeEvents>,max_events:u64)->Result<()>{
 }
 
 // releasing the margin as they are now moved to the userPosition PDA.
-fn process_order_fill(
-    remaining_accounts: &[AccountInfo],
+fn process_order_fill<'info>(
+    remaining_accounts: &'info[AccountInfo<'info>],
     market_key:Pubkey,
     user_key:Pubkey,
     order_id:u128,
@@ -230,9 +227,9 @@ fn process_order_fill(
         }
     };
 
-    let mut data = open_order_account_info.try_borrow_mut_data()?;
+    let open_orders_account_loader: AccountLoader<'_, OpenOrdersAccount> = AccountLoader::try_from(open_order_account_info)?;
 
-    let mut open_orders_account:OpenOrdersAccount = AccountDeserialize::try_deserialize(&mut &data[..])?;
+    let mut open_orders_account = open_orders_account_loader.load_mut()?; 
 
     let order_idx = open_orders_account.find_order_by_order_id(order_id)?;
     let order = &mut open_orders_account.orders[order_idx];
@@ -250,14 +247,19 @@ fn process_order_fill(
     order.locked_margin = order.locked_margin.checked_sub(margin_release).ok_or(ErrorCode::SubtractionUnderFlow)?;
 
     if order.quantity == 0 {
-        order.status = crate::OrderStatus::FREE;
+        order.set_status(OrderStatus::FREE);
         open_orders_account.client_order_ids[order_idx] = 0;
     }
 
-    let mut writer = &mut data.as_mut()[..];
-    open_orders_account.try_serialize(&mut writer)?;
     Ok(())
 }
+
+// reference is also tied to 'info
+// the reference and the inner AccountInfo should share the same reference.
+// Accountloader stores a reference to AccountInfo<'info>, so it must not outlive AccountInfo<'info> so we are passing the specifier in the lifetime also.
+// fn load_open_order_from_info<'info>(acc:&'info AccountInfo<'info>)->Result<AccountLoader<'info,OpenOrdersAccount>>{
+//     AccountLoader::try_from(acc)
+// }
 
 fn process_position_update(
     remaining_accounts:&[AccountInfo],

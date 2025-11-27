@@ -60,6 +60,7 @@ pub struct InitializeMarket<'info>{
     )]
     pub event_queue: AccountLoader<'info,EventQueueAccount>,
 
+    /// CHECK:
     #[account(
         init,
         payer = signer,
@@ -72,6 +73,7 @@ pub struct InitializeMarket<'info>{
     )]
     pub bids : UncheckedAccount<'info>,
 
+    /// CHECK:
     #[account(
         init,
         payer = signer,

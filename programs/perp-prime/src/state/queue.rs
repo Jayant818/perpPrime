@@ -19,6 +19,9 @@ pub struct QueueHeader{
     pub count: u64,
 }
 
+#[cfg(feature = "idl-build")]
+impl anchor_lang::IdlBuild for QueueHeader {}
+
 // compile time check
 const _:() = assert!(std::mem::size_of::<QueueHeader>()==32);
 

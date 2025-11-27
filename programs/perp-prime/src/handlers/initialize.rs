@@ -1,4 +1,4 @@
-use anchor_lang::prelude::{borsh::de, *};
+use anchor_lang::prelude::*;
 use anchor_spl::{ token_interface::{Mint, TokenAccount, TokenInterface}};
 use crate::{GlobalConfig};
 

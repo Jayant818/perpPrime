@@ -21,6 +21,9 @@ pub struct AnyEvent {
 }
 const _: () = assert!(std::mem::size_of::<AnyEvent>() == EVENT_SIZE);
 
+#[cfg(feature = "idl-build")]
+impl anchor_lang::IdlBuild for AnyEvent {}
+
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable, Debug)]
 pub struct FillEventPod {
@@ -102,6 +105,9 @@ pub struct EventQueueEntry {
     pub raw: AnyEvent,
 }
 
+#[cfg(feature = "idl-build")]
+impl anchor_lang::IdlBuild for EventQueueEntry {}
+
 impl Default for EventQueueEntry {
     fn default() -> Self {
         Self {
@@ -123,7 +129,7 @@ pub fn array_to_pubkey(bytes: [u8; 32]) -> Pubkey {
 }
 
 #[repr(C)]
-#[account(zero_copy)]
+#[account(zero_copy(unsafe))]
 pub struct EventQueueAccount{
     pub header: QueueHeader,
     entries: [EventQueueEntry;0],

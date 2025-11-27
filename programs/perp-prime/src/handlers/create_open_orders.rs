@@ -9,7 +9,7 @@ pub struct CreateOpenOrdersAccount<'info>{
 
     #[account(
         init,
-        space = OpenOrdersAccount::DISCRIMINATOR.len() +OpenOrdersAccount::INIT_SPACE,
+        space = OpenOrdersAccount::DISCRIMINATOR.len() + std::mem::size_of::<OpenOrdersAccount>(),
         seeds = [
             b"open_orders",
             signer.key().as_ref(),
@@ -18,7 +18,7 @@ pub struct CreateOpenOrdersAccount<'info>{
         bump,
         payer = signer,
     )]
-    pub open_orders_account: Account<'info,OpenOrdersAccount>,
+    pub open_orders_account: AccountLoader<'info,OpenOrdersAccount>,
 
     #[account(
         seeds = [   
@@ -34,7 +34,7 @@ pub struct CreateOpenOrdersAccount<'info>{
 }   
 
 pub fn create_open_orders_account(ctx: Context<CreateOpenOrdersAccount>) -> Result<()> {
-    let open_orders_account: &mut Account<'_, OpenOrdersAccount> = &mut ctx.accounts.open_orders_account;
+    let mut open_orders_account=  ctx.accounts.open_orders_account.load_mut()?;
 
     open_orders_account.owner = ctx.accounts.signer.key();
     

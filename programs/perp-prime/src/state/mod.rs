@@ -7,7 +7,6 @@ pub mod event_queue;
 pub mod user_position;
 pub mod slab_tree;
 pub mod order;
-pub mod events;
 pub mod open_orders;
 pub mod initialize_user_position;
 
@@ -20,6 +19,5 @@ pub use event_queue::*;
 pub use user_position::*;
 pub use slab_tree::*;
 pub use order::*;
-pub use events::*;
 pub use open_orders::*;
 pub use initialize_user_position::*;

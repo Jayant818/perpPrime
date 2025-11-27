@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::spl_pod::option::Nullable;
 use crate::{
-    GlobalConfig, Market, OpenOrdersAccount, Order, OrderPosition, OrderSide, OrderStatus, OrderType, PositionStatus, RequestItem, RequestQueueAccount, UserAccount, UserPosition, error::ErrorCode, user, user_position
+    GlobalConfig, Market, OpenOrdersAccount, Order, OrderPosition, OrderSide, OrderStatus, OrderType, PositionStatus, RequestItem, RequestQueueAccount,  UserAccount, UserPosition, error::ErrorCode, user, user_position
 };
 
 #[derive(Accounts)]
@@ -49,11 +49,12 @@ pub struct PlacePerpOrder<'info> {
             owner.key().as_ref(),
             market.key().as_ref()
         ],
-        bump = open_orders_account.bump,
+        // bump = open_orders_account.load_mut()?.bump
+        bump,
         has_one = owner @ ErrorCode::InvalidOwner,
         has_one = market,
     )]
-    pub open_orders_account: Account<'info, OpenOrdersAccount>,
+    pub open_orders_account: AccountLoader<'info, OpenOrdersAccount>,
     
     #[account(
         mut,
@@ -87,7 +88,7 @@ pub fn place_perp_order(
     
     let user_account = &mut ctx.accounts.user_account;
     let market = &mut ctx.accounts.market;
-    let open_orders_account = &mut ctx.accounts.open_orders_account;
+    let mut open_orders_account = ctx.accounts.open_orders_account.load_mut()?;
 
     require!(user_account.available_collateral >= margin, ErrorCode::InsufficientCollateral);
 
@@ -113,18 +114,19 @@ pub fn place_perp_order(
     let free_slot_index = open_orders_account.find_free_slot()?;
     
     let order_slot = &mut open_orders_account.orders[free_slot_index];
-    *order_slot = Order {
-        status: OrderStatus::PENDING, 
-        order_id,
-        client_order_id,
-        quantity: qty_in_lots,
-        side,
-        position,
-        limit_price:limit_price_in_lots,
-        order_type,
-        locked_margin: margin,
-        is_liquidating:false,
-    };
+
+    *order_slot = Order::new(
+        OrderStatus::PENDING, 
+        side, 
+        order_type, 
+        position, 
+        false, 
+        qty_in_lots, 
+        order_id, 
+        client_order_id, 
+        margin, 
+        limit_price_in_lots,
+    );
     
     open_orders_account.client_order_ids[free_slot_index] = client_order_id;
 

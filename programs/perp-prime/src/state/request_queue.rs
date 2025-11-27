@@ -6,7 +6,7 @@ use bytemuck::{Zeroable,Pod};
 use crate::{QueueHeader,error::ErrorCode};
 
 
-#[account(zero_copy)]
+#[account(zero_copy(unsafe))]
 #[repr(C)]
 pub struct RequestQueueAccount{
     pub header:QueueHeader,
@@ -102,16 +102,16 @@ pub enum OrderType{
     LimitOrder
 }
 
-#[repr(C)]
-#[derive(Clone,Copy,Debug,AnchorDeserialize,AnchorSerialize,Default,InitSpace,PartialEq)]
+#[repr(u8)]
+#[derive(Clone,Copy,Debug,Default,PartialEq,AnchorSerialize,AnchorDeserialize)]
 pub enum OrderSide{
     #[default]
     BID = 0,
     ASK = 1
 }
 
-#[repr(C)]
-#[derive(Clone,Copy,AnchorDeserialize,AnchorSerialize,InitSpace,Default,Debug)]
+#[repr(u8)]
+#[derive(Clone,Copy,PartialEq,Default,Debug,AnchorSerialize,AnchorDeserialize,InitSpace)]
 pub enum OrderPosition{
     #[default]
     SHORT = 0,
@@ -119,7 +119,7 @@ pub enum OrderPosition{
 }
 
 #[repr(C)]
-#[derive(Clone,Copy,AnchorDeserialize,AnchorSerialize,Default)]
+#[derive(Clone,Copy,PartialEq,Debug,Default)]
 pub enum RequestType{
     #[default]
     OPEN = 0,
@@ -141,6 +141,9 @@ pub struct RequestItem{
     // pub padding1: [u8; 0],
     // pub entry_price: u64, - Not suitable for Cancel Order, instead we show the order_id
 }
+
+#[cfg(feature = "idl-build")]
+impl anchor_lang::IdlBuild for RequestItem {}
 
 impl RequestItem {
     pub fn init(
